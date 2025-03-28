@@ -29,8 +29,12 @@ def fetch_paginated_data(url, headers, params=None):
             print("First page response structure:")
             print(json.dumps({k: v for k, v in data.items() if k != 'data'}, indent=2))
             if data.get('data'):
-                print("Sample item structure:")
-                print(json.dumps(data['data'][0], indent=2))
+                print("Sample items structure:")
+                for i, item in enumerate(data['data'][:3]):  # Show first 3 items
+                    print(f"\nItem {i+1}:")
+                    item_type = item.get('item', {}).get('type', 'unknown')
+                    item_title = item.get('item', {}).get('title', 'untitled')
+                    print(f"Type: {item_type}, Title: {item_title}")
         
         items = data.get('data', [])
         
@@ -38,16 +42,17 @@ def fetch_paginated_data(url, headers, params=None):
             print("No more items found")
             break
             
-        # Filter for movies if we're not using category parameter
+        # Filter for media items if we're not using category parameter
         if 'category' not in params:
+            original_count = len(items)
             items = [item for item in items if _is_movie_item(item)]
-            print(f"Filtered to {len(items)} movie items")
+            print(f"Filtered from {original_count} items to {len(items)} media items")
         
         all_items.extend(items)
         current_count = len(all_items)
         
         # If we got less than items_per_page, we're on the last page
-        has_more = len(items) >= items_per_page
+        has_more = len(data.get('data', [])) >= items_per_page  # Check original data length
         print(f"Fetched page {page} ({len(items)} items, total so far: {current_count})")
         
         if not has_more:
@@ -62,21 +67,29 @@ def fetch_paginated_data(url, headers, params=None):
 
 def _is_movie_item(item):
     """Helper function to determine if an item is a movie"""
-    # Check item itself
-    if item.get('type') == 'movie' or item.get('category') == 'movie':
-        return True
+    def check_media_type(data):
+        item_type = data.get('type', '').lower()
+        category = data.get('category', '').lower()
         
-    # Check item.item structure (NeoDB sometimes nests the data)
+        # Debug: Print what we're checking
+        print(f"Checking type: {item_type}, category: {category}")
+        
+        # Only include movies, exclude TV shows
+        return (
+            item_type == 'movie' or
+            category == 'movie' or
+            (item_type == 'media' and category == 'movie')
+        )
+    
+    # Check the item itself
+    if check_media_type(item):
+        return True
+    
+    # Check nested item data
     item_data = item.get('item', {})
-    if item_data.get('type') == 'movie' or item_data.get('category') == 'movie':
+    if check_media_type(item_data):
         return True
-        
-    # Check media type
-    if item.get('type') == 'media' and item.get('category') == 'movie':
-        return True
-    if item_data.get('type') == 'media' and item_data.get('category') == 'movie':
-        return True
-        
+    
     return False
 
 def fetch_neodb_data():
