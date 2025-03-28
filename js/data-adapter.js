@@ -153,9 +153,70 @@ function processNeoDBAData(rawData) {
         if (!nodeIds.has(nodeId)) {
             processedData.nodes.push(processedNode);
             nodeIds.add(nodeId);
-            
-            // Extract creators for this movie
-            extractCreators(node, processedData, nodeIds, creatorIds);
+        }
+        
+        // Extract creators for this movie
+        if (nodeData.director) {
+            const directors = Array.isArray(nodeData.director) ? nodeData.director : [nodeData.director];
+            directors.forEach(directorName => {
+                const directorId = `director_${createIdFromName(directorName)}`;
+                if (!creatorIds.has(directorId)) {
+                    processedData.nodes.push({
+                        id: directorId,
+                        name: directorName,
+                        type: 'creator',
+                        role: 'director'
+                    });
+                    creatorIds.add(directorId);
+                }
+                processedData.links.push({
+                    source: directorId,
+                    target: nodeId,
+                    type: 'directed'
+                });
+            });
+        }
+        
+        if (nodeData.actor) {
+            const actors = Array.isArray(nodeData.actor) ? nodeData.actor : [nodeData.actor];
+            actors.forEach(actorName => {
+                const actorId = `actor_${createIdFromName(actorName)}`;
+                if (!creatorIds.has(actorId)) {
+                    processedData.nodes.push({
+                        id: actorId,
+                        name: actorName,
+                        type: 'creator',
+                        role: 'actor'
+                    });
+                    creatorIds.add(actorId);
+                }
+                processedData.links.push({
+                    source: actorId,
+                    target: nodeId,
+                    type: 'acted_in'
+                });
+            });
+        }
+        
+        if (nodeData.playwright) {
+            const playwrights = Array.isArray(nodeData.playwright) ? nodeData.playwright : [nodeData.playwright];
+            playwrights.forEach(playwrightName => {
+                const playwrightId = `playwright_${createIdFromName(playwrightName)}`;
+                if (!creatorIds.has(playwrightId)) {
+                    processedData.nodes.push({
+                        id: playwrightId,
+                        name: playwrightName,
+                        type: 'creator',
+                        role: 'playwright'
+                    });
+                    creatorIds.add(playwrightId);
+                }
+                processedData.links.push({
+                    source: playwrightId,
+                    target: nodeId,
+                    type: 'wrote'
+                });
+            });
         }
     });
 
@@ -165,153 +226,15 @@ function processNeoDBAData(rawData) {
     // Export the processed data to CSV format
     exportToCSV(processedData);
     
-    // Helper function to extract creators from a movie node
-    function extractCreators(node, processedData, nodeIds, creatorIds) {
-        const nodeData = node.data || {};
-        
-        // Extract creators for movies
-        let creators = [];
-        
-        // Look for directors in various places
-        const directors = [];
-        if (nodeData.directors) {
-            directors.push(...(Array.isArray(nodeData.directors) ? nodeData.directors : [nodeData.directors]));
-        }
-        if (nodeData.director) {
-            directors.push(...(Array.isArray(nodeData.director) ? nodeData.director : [nodeData.director]));
-        }
-        if (nodeData.credits && nodeData.credits.director) {
-            directors.push(...(Array.isArray(nodeData.credits.director) ? nodeData.credits.director : [nodeData.credits.director]));
-        }
-        
-        directors.forEach(director => {
-            const directorName = typeof director === 'string' ? director : (director.name || 'Unknown Director');
-            const directorId = `director_${createIdFromName(directorName)}`;
-            
-            creators.push({
-                id: directorId,
-                name: directorName,
-                type: 'creator',
-                role: 'director'
-            });
-        });
-        
-        // Look for cast in various places (limit to main cast - first 5)
-        const cast = [];
-        if (nodeData.cast) {
-            cast.push(...(Array.isArray(nodeData.cast) ? nodeData.cast : [nodeData.cast]));
-        }
-        if (nodeData.credits && nodeData.credits.cast) {
-            cast.push(...(Array.isArray(nodeData.credits.cast) ? nodeData.credits.cast : [nodeData.credits.cast]));
-        }
-        
-        cast.slice(0, 5).forEach(actor => {
-            const actorName = typeof actor === 'string' ? actor : (actor.name || 'Unknown Actor');
-            const actorId = `actor_${createIdFromName(actorName)}`;
-            
-            creators.push({
-                id: actorId,
-                name: actorName,
-                type: 'creator',
-                role: 'actor'
-            });
-        });
-        
-        // Add creator nodes and links
-        creators.forEach(creator => {
-            if (!creatorIds.has(creator.id)) {
-                // Add creator node if it doesn't exist yet
-                processedData.nodes.push(creator);
-                nodeIds.add(creator.id);
-                creatorIds.add(creator.id);
-            }
-            
-            // Connect creator to movie item
-            processedData.links.push({
-                source: creator.id,
-                target: node.id,
-                type: creator.role
-            });
-        });
-    }
-    
-    // Create links between directors and actors who have worked together
-    const directorNodes = processedData.nodes.filter(node => node.role === 'director');
-    const actorNodes = processedData.nodes.filter(node => node.role === 'actor');
-    
-    // For each director, find all their movies and connect them to the actors in those movies
-    directorNodes.forEach(director => {
-        // Find all movies this director worked on
-        const directorMovies = processedData.links
-            .filter(link => link.source === director.id)
-            .map(link => link.target);
-        
-        // For each movie, find all actors
-        directorMovies.forEach(movieId => {
-            const movieActors = processedData.links
-                .filter(link => link.target === movieId && 
-                              processedData.nodes.find(n => n.id === link.source && n.role === 'actor'))
-                .map(link => link.source);
-            
-            // Connect director to actors
-            movieActors.forEach(actorId => {
-                // Check if link already exists
-                const linkExists = processedData.links.some(link => 
-                    (link.source === director.id && link.target === actorId) || 
-                    (link.source === actorId && link.target === director.id)
-                );
-                
-                if (!linkExists) {
-                    processedData.links.push({
-                        source: director.id,
-                        target: actorId,
-                        type: 'worked_with'
-                    });
-                }
-            });
-        });
-    });
-    
-    // Create links between actors who have appeared in the same movies
-    const processedPairs = new Set();
-    
-    actorNodes.forEach(actor1 => {
-        // Find all movies this actor appeared in
-        const actor1Movies = processedData.links
-            .filter(link => link.source === actor1.id)
-            .map(link => link.target);
-        
-        // For each movie, find other actors in the same movie
-        actor1Movies.forEach(movieId => {
-            const coActors = processedData.links
-                .filter(link => link.target === movieId && 
-                              link.source !== actor1.id &&
-                              processedData.nodes.find(n => n.id === link.source && n.role === 'actor'))
-                .map(link => link.source);
-            
-            // Connect actor to co-actors (if not already connected)
-            coActors.forEach(actor2Id => {
-                // Create a unique pair ID (smaller ID first to avoid duplicates)
-                const pairId = [actor1.id, actor2Id].sort().join('_');
-                
-                if (!processedPairs.has(pairId)) {
-                    processedPairs.add(pairId);
-                    
-                    processedData.links.push({
-                        source: actor1.id,
-                        target: actor2Id,
-                        type: 'co_actor'
-                    });
-                }
-            });
-        });
-    });
-    
     return processedData;
-    
-    // Helper function to create an ID from a name
-    function createIdFromName(name) {
-        if (!name) return Math.random().toString(36).substring(2, 10);
-        return name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 20);
-    }
+}
+
+// Helper function to create a consistent ID from a name
+function createIdFromName(name) {
+    if (!name) return Math.random().toString(36).substring(2, 10);
+    return name.toLowerCase()
+        .replace(/[^a-z0-9]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+        .substring(0, 20);
 }

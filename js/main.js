@@ -19,18 +19,58 @@ document.addEventListener('DOMContentLoaded', () => {
             // Process the data
             const processedData = processNeoDBAData(rawData);
             
-            // Debug: Log the processed data structure
-            console.log("=== PROCESSED DATA ===");
+            // Detailed data inspection
+            console.log("=== DETAILED DATA INSPECTION ===");
+            console.log("Raw data structure:", {
+                hasGraphData: !!rawData.graph_data,
+                totalRawNodes: rawData.graph_data?.nodes?.length || 0,
+                totalRawLinks: rawData.graph_data?.links?.length || 0
+            });
+            
+            if (!processedData) {
+                throw new Error('Data processing failed - no data returned');
+            }
+            
+            console.log("\nProcessed data structure:");
             console.log("Total nodes:", processedData.nodes.length);
-            console.log("Node types:", processedData.nodes.reduce((acc, node) => {
-                acc[node.type] = (acc[node.type] || 0) + 1;
+            console.log("Node breakdown:", processedData.nodes.reduce((acc, node) => {
+                acc[node.type] = acc[node.type] || { total: 0, examples: [] };
+                acc[node.type].total++;
+                if (acc[node.type].examples.length < 3) {
+                    acc[node.type].examples.push({
+                        id: node.id,
+                        name: node.name,
+                        type: node.type,
+                        role: node.role
+                    });
+                }
                 return acc;
             }, {}));
-            console.log("Total links:", processedData.links.length);
-            console.log("Link types:", processedData.links.reduce((acc, link) => {
-                acc[link.type] = (acc[link.type] || 0) + 1;
+            
+            console.log("\nTotal links:", processedData.links.length);
+            console.log("Link breakdown:", processedData.links.reduce((acc, link) => {
+                acc[link.type] = acc[link.type] || { total: 0, examples: [] };
+                acc[link.type].total++;
+                if (acc[link.type].examples.length < 3) {
+                    acc[link.type].examples.push({
+                        source: link.source,
+                        target: link.target,
+                        type: link.type
+                    });
+                }
                 return acc;
             }, {}));
+            
+            // Verify data integrity
+            const nodeIds = new Set(processedData.nodes.map(n => n.id));
+            const invalidLinks = processedData.links.filter(link => 
+                !nodeIds.has(typeof link.source === 'object' ? link.source.id : link.source) ||
+                !nodeIds.has(typeof link.target === 'object' ? link.target.id : link.target)
+            );
+            
+            if (invalidLinks.length > 0) {
+                console.error("Found invalid links:", invalidLinks);
+            }
             
             // Initialize the visualization
             graphVisualization.init('graph-container', processedData);
