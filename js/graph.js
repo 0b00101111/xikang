@@ -4,7 +4,7 @@
 const graphVisualization = (function() {
     // Private variables
     let svg, g, width, height, data;
-    let simulation, link, node, nodeLabels;
+    let simulation, link, node, nodeLabels, linkLabels;
     let zoom;
     let nodes = [], links = [];
     let selectedNode = null;
@@ -17,48 +17,36 @@ const graphVisualization = (function() {
     };
 
     // Color scales
-    const mediaColors = d3.scaleOrdinal()
-        .range(['var(--movie-color)', 'var(--book-color)', 'var(--tvseries-color)', 
-                'var(--music-color)', 'var(--podcast-color)']);
+    const nodeColors = {
+        user: '#555',
+        tag: '#06d6a0',
+        shelf: '#ffbe0b',
+        book: '#4361ee',
+        movie: '#e5383b',
+        tv: '#7209b7',
+        tvseries: '#7209b7',
+        music: '#f72585',
+        podcast: '#4cc9f0',
+        game: '#4f772d',
+        Edition: '#4361ee',  // Same as book
+        album: '#f72585'     // Same as music
+    };
 
-    const creatorColors = d3.scaleOrdinal()
-        .range(['var(--director-color)', 'var(--author-color)', 'var(--actor-color)',
-                'var(--musician-color)']);
-
-    // Get node color based on type and category
+    // Get node color based on type
     function getNodeColor(d) {
-        if (d.type === 'media' && d.category) {
-            return mediaColors(d.category);
-        } else if (d.type === 'creator' && d.category) {
-            return creatorColors(d.category);
-        } else if (d.type === 'genre') {
-            return 'var(--genre-color)';
-        } else if (d.type === 'tag') {
-            return 'var(--tag-color)';
-        }
-        
-        // Default colors
-        return d.type === 'media' ? 'var(--movie-color)' : 
-               d.type === 'creator' ? 'var(--director-color)' :
-               d.type === 'genre' ? 'var(--genre-color)' :
-               'var(--tag-color)';
+        return nodeColors[d.type] || nodeColors[d.category] || '#555';
     }
 
-    // Get node size based on type and data
+    // Get node size based on type
     function getNodeSize(d) {
-        if (d.type === 'media') {
-            // Media nodes are larger, boosted by rating if available
-            return 12 + (d.rating ? d.rating / 2 : 0);
-        } else if (d.type === 'creator') {
-            // Creator size based on media count
-            return 8 + (d.media_count ? Math.min(d.media_count, 5) : 0);
-        } else if (d.type === 'genre') {
-            // Genre size based on media count
-            return 6 + (d.media_count ? Math.min(d.media_count / 2, 4) : 0);
-        } else {
-            // Tags and other nodes
-            return 5 + (d.media_count ? Math.min(d.media_count / 3, 3) : 0);
+        if (d.type === 'user') {
+            return 30; // User node is largest
+        } else if (d.type === 'tag' || d.type === 'shelf') {
+            return 12; // Tags and shelves are medium
+        } else if (d.type === 'media') {
+            return 8 + (d.rating ? d.rating / 5 : 0); // Media nodes sized by rating
         }
+        return 8; // Default size
     }
 
     // Initialize the visualization
@@ -83,7 +71,8 @@ const graphVisualization = (function() {
             .append('svg')
             .attr('width', width)
             .attr('height', height)
-            .attr('class', 'graph-svg');
+            .attr('class', 'graph-svg')
+            .attr('viewBox', [-width/2, -height/2, width, height]);
         
         // Create zoom behavior
         zoom = d3.zoom()
@@ -110,7 +99,22 @@ const graphVisualization = (function() {
             .data(links)
             .enter().append('line')
             .attr('class', 'link')
-            .attr('stroke-width', d => Math.sqrt(d.value || 1));
+            .attr('stroke-width', d => Math.sqrt(d.value || 1))
+            .attr('stroke', '#999')
+            .attr('stroke-opacity', 0.6);
+        
+        // Create link labels
+        linkLabels = g.append('g')
+            .attr('class', 'link-labels')
+            .selectAll('text')
+            .data(links)
+            .enter().append('text')
+            .attr('class', 'link-label')
+            .attr('dy', -3)
+            .attr('text-anchor', 'middle')
+            .text(d => d.type)
+            .style('font-size', '7px')
+            .style('opacity', 0);  // Hidden by default
         
         // Create nodes
         node = g.append('g')
@@ -121,6 +125,8 @@ const graphVisualization = (function() {
             .attr('class', 'node')
             .attr('r', getNodeSize)
             .attr('fill', getNodeColor)
+            .attr('stroke', '#fff')
+            .attr('stroke-width', 1.5)
             .call(d3.drag()
                 .on('start', dragstarted)
                 .on('drag', dragged)
@@ -133,24 +139,48 @@ const graphVisualization = (function() {
             .data(nodes)
             .enter().append('text')
             .attr('class', 'node-label')
-            .attr('dx', 12)
+            .attr('dx', d => getNodeSize(d) + 2)
             .attr('dy', '.35em')
             .text(d => d.name)
             .style('font-size', d => {
-                if (d.type === 'media') return '10px';
+                if (d.type === 'user') return '14px';
+                if (d.type === 'tag' || d.type === 'shelf') return '10px';
                 return '8px';
             })
             .style('opacity', d => {
-                if (d.type === 'media') return 1;
+                if (d.type === 'user') return 1;
+                if (d.type === 'tag' || d.type === 'shelf') return 0.9;
                 return 0.7;
             });
         
-        // Create force simulation
+        // Create force simulation with more space
         simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(links).id(d => d.id).distance(100))
-            .force('charge', d3.forceManyBody().strength(-300))
-            .force('center', d3.forceCenter(width / 2, height / 2))
-            .force('collision', d3.forceCollide().radius(d => getNodeSize(d) + 5));
+            .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
+                // Adjust link distance based on node types
+                const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
+                const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
+                
+                if (source.type === 'user' || target.type === 'user') {
+                    return 200; // Links to user are longer
+                } else if (source.type === 'tag' || target.type === 'tag' ||
+                           source.type === 'shelf' || target.type === 'shelf') {
+                    return 150; // Links to tags and shelves are medium
+                }
+                return 80; // Default distance
+            }))
+            .force('charge', d3.forceManyBody().strength(d => {
+                // Adjust repulsive force based on node type
+                if (d.type === 'user') {
+                    return -2000; // User node has strong repulsion
+                } else if (d.type === 'tag' || d.type === 'shelf') {
+                    return -500; // Tags and shelves have medium repulsion
+                }
+                return -200; // Default repulsion
+            }))
+            .force('center', d3.forceCenter(0, 0))
+            .force('collision', d3.forceCollide().radius(d => getNodeSize(d) + 10))
+            .force('x', d3.forceX().strength(0.01)) // Very weak force toward center
+            .force('y', d3.forceY().strength(0.01)); // Very weak force toward center
         
         // Add tooltip behavior
         node.on('mouseover', function(event, d) {
@@ -159,11 +189,7 @@ const graphVisualization = (function() {
                 .style('opacity', .9);
             
             let tooltipContent = `<strong>${d.name}</strong><br>`;
-            tooltipContent += `Type: ${d.type}`;
-            
-            if (d.type === 'media' && d.category) {
-                tooltipContent += `<br>Category: ${d.category}`;
-            }
+            tooltipContent += `Type: ${d.type === 'media' ? d.category : d.type}`;
             
             if (d.rating) {
                 tooltipContent += `<br>Rating: ${d.rating}/10`;
@@ -172,6 +198,48 @@ const graphVisualization = (function() {
             tooltip.html(tooltipContent)
                 .style('left', (event.pageX + 10) + 'px')
                 .style('top', (event.pageY - 28) + 'px');
+            
+            // Highlight connected links and show their labels
+            link.style('stroke', l => {
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                return (source.id === d.id || target.id === d.id) ? '#000' : '#999';
+            })
+            .style('stroke-opacity', l => {
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                return (source.id === d.id || target.id === d.id) ? 1 : 0.2;
+            })
+            .style('stroke-width', l => {
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                return (source.id === d.id || target.id === d.id) ? 2 : Math.sqrt(l.value || 1);
+            });
+            
+            // Show labels for connected links
+            linkLabels.style('opacity', l => {
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                return (source.id === d.id || target.id === d.id) ? 1 : 0;
+            });
+            
+            // Highlight connected nodes
+            node.style('stroke', n => {
+                const isConnected = links.some(l => {
+                    const source = typeof l.source === 'object' ? l.source : nodes.find(node => node.id === l.source);
+                    const target = typeof l.target === 'object' ? l.target : nodes.find(node => node.id === l.target);
+                    return (source.id === d.id && target.id === n.id) || (target.id === d.id && source.id === n.id);
+                });
+                return isConnected ? '#000' : '#fff';
+            })
+            .style('stroke-width', n => {
+                const isConnected = links.some(l => {
+                    const source = typeof l.source === 'object' ? l.source : nodes.find(node => node.id === l.source);
+                    const target = typeof l.target === 'object' ? l.target : nodes.find(node => node.id === l.target);
+                    return (source.id === d.id && target.id === n.id) || (target.id === d.id && source.id === n.id);
+                });
+                return isConnected ? 2.5 : 1.5;
+            });
             
             // Call hover callback if provided
             if (config.onNodeHover) {
@@ -182,6 +250,18 @@ const graphVisualization = (function() {
             tooltip.transition()
                 .duration(500)
                 .style('opacity', 0);
+            
+            // Reset link styles
+            link.style('stroke', '#999')
+                .style('stroke-opacity', 0.6)
+                .style('stroke-width', d => Math.sqrt(d.value || 1));
+            
+            // Hide link labels
+            linkLabels.style('opacity', 0);
+            
+            // Reset node strokes
+            node.style('stroke', '#fff')
+                .style('stroke-width', 1.5);
         });
         
         // Add click behavior
@@ -199,6 +279,25 @@ const graphVisualization = (function() {
             selectedNode = d;
             d3.select(this).classed('node-selected', true);
             
+            // Highlight connections and show relationship labels
+            link.style('stroke', l => {
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                return (source.id === d.id || target.id === d.id) ? '#000' : '#999';
+            })
+            .style('stroke-opacity', l => {
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                return (source.id === d.id || target.id === d.id) ? 1 : 0.1;
+            });
+            
+            // Show relationship labels
+            linkLabels.style('opacity', l => {
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                return (source.id === d.id || target.id === d.id) ? 1 : 0;
+            });
+            
             // Call click callback if provided
             if (config.onNodeClick) {
                 config.onNodeClick(d);
@@ -209,6 +308,13 @@ const graphVisualization = (function() {
         svg.on('click', function(event) {
             if (event.target === this) {
                 if (selectedNode) {
+                    // Reset link styles
+                    link.style('stroke', '#999')
+                        .style('stroke-opacity', 0.6);
+                    
+                    // Hide link labels
+                    linkLabels.style('opacity', 0);
+                    
                     d3.select(g)
                         .selectAll('.node-selected')
                         .classed('node-selected', false);
@@ -231,35 +337,40 @@ const graphVisualization = (function() {
                 .attr('x2', d => d.target.x)
                 .attr('y2', d => d.target.y);
             
+            // Position link labels at midpoint of links
+            linkLabels
+                .attr('x', d => (d.source.x + d.target.x) / 2)
+                .attr('y', d => (d.source.y + d.target.y) / 2);
+            
             node
-                .attr('cx', d => d.x = Math.max(getNodeSize(d), Math.min(width - getNodeSize(d), d.x)))
-                .attr('cy', d => d.y = Math.max(getNodeSize(d), Math.min(height - getNodeSize(d), d.y)));
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y);
             
             nodeLabels
                 .attr('x', d => d.x)
                 .attr('y', d => d.y);
         });
+        
+        // Initial centering zoom
+        svg.call(zoom.transform, d3.zoomIdentity.scale(0.8));
     }
 
     // Initialize node types for filtering
     function initNodeTypes() {
-        // Media types
-        if (data.metadata && data.metadata.mediaTypes) {
-            data.metadata.mediaTypes.forEach(type => {
-                nodeTypes[`media-${type}`] = true;
-            });
-        }
+        // Get all unique node types
+        const types = new Set();
+        nodes.forEach(node => {
+            if (node.type === 'media') {
+                types.add(`media-${node.category}`);
+            } else {
+                types.add(node.type);
+            }
+        });
         
-        // Creator types
-        if (data.metadata && data.metadata.creatorTypes) {
-            data.metadata.creatorTypes.forEach(type => {
-                nodeTypes[`creator-${type}`] = true;
-            });
-        }
-        
-        // Other node types
-        nodeTypes['genre'] = true;
-        nodeTypes['tag'] = true;
+        // Initialize all to visible
+        types.forEach(type => {
+            nodeTypes[type] = true;
+        });
     }
 
     // Drag functions
@@ -276,8 +387,11 @@ const graphVisualization = (function() {
 
     function dragended(event, d) {
         if (!event.active) simulation.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
+        // Don't reset user node position
+        if (d.type !== 'user') {
+            d.fx = null;
+            d.fy = null;
+        }
     }
 
     // Filter nodes by category
@@ -288,13 +402,20 @@ const graphVisualization = (function() {
             // Show all nodes and links
             node.style('opacity', 1);
             link.style('opacity', 0.6);
-            nodeLabels.style('opacity', d => d.type === 'media' ? 1 : 0.7);
+            nodeLabels.style('opacity', d => {
+                if (d.type === 'user') return 1;
+                if (d.type === 'tag' || d.type === 'shelf') return 0.9;
+                return 0.7;
+            });
+            linkLabels.style('opacity', 0);
         } else {
             // Filter nodes by category
             node.style('opacity', d => {
-                if (d.type === 'media') {
+                if (d.type === 'user') {
+                    return 1; // Always show user
+                } else if (d.type === 'media') {
                     return d.category === category ? 1 : 0.1;
-                } else if (d.type === 'creator' || d.type === 'genre' || d.type === 'tag') {
+                } else if (d.type === 'tag' || d.type === 'shelf') {
                     // Check if this entity is connected to any media of the selected category
                     const isConnected = links.some(link => {
                         const source = typeof link.source === 'object' ? link.source : nodes.find(n => n.id === link.source);
@@ -316,6 +437,11 @@ const graphVisualization = (function() {
                 const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
                 const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
                 
+                // Always show connections to user
+                if (source.type === 'user' || target.type === 'user') {
+                    return 0.6;
+                }
+                
                 // If source or target is a media node with the selected category
                 if ((source.type === 'media' && source.category === category) ||
                     (target.type === 'media' && target.category === category)) {
@@ -327,12 +453,19 @@ const graphVisualization = (function() {
             
             // Filter labels
             nodeLabels.style('opacity', d => {
-                if (d.type === 'media') {
-                    return d.category === category ? 1 : 0.1;
+                if (d.type === 'user') {
+                    return 1; // Always show user label
                 }
                 
-                return node.filter(n => n.id === d.id).style('opacity') > 0.1 ? 0.7 : 0.1;
+                if (node.filter(n => n.id === d.id).style('opacity') > 0.1) {
+                    return d.type === 'media' ? 0.7 : 0.9;
+                }
+                
+                return 0.1;
             });
+            
+            // Hide all link labels
+            linkLabels.style('opacity', 0);
         }
     }
 
@@ -349,9 +482,11 @@ const graphVisualization = (function() {
         
         // Update node visibility
         node.style('opacity', d => {
+            if (d.type === 'user') {
+                return 1; // Always show user
+            }
+            
             if (type === 'media' && d.type === 'media') {
-                return (d.category === category) ? (isVisible ? 1 : 0.1) : node.filter(n => n.id === d.id).style('opacity');
-            } else if (type === 'creator' && d.type === 'creator') {
                 return (d.category === category) ? (isVisible ? 1 : 0.1) : node.filter(n => n.id === d.id).style('opacity');
             } else if (type === d.type && !category) {
                 return isVisible ? 1 : 0.1;
@@ -365,15 +500,17 @@ const graphVisualization = (function() {
             const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
             const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
             
+            // Always show connections to user
+            if (source.type === 'user' || target.type === 'user') {
+                return 0.6;
+            }
+            
             let sourceMatch = false;
             let targetMatch = false;
             
             if (type === 'media') {
                 sourceMatch = source.type === 'media' && source.category === category;
                 targetMatch = target.type === 'media' && target.category === category;
-            } else if (type === 'creator') {
-                sourceMatch = source.type === 'creator' && source.category === category;
-                targetMatch = target.type === 'creator' && target.category === category;
             } else {
                 sourceMatch = source.type === type;
                 targetMatch = target.type === type;
@@ -388,9 +525,14 @@ const graphVisualization = (function() {
         
         // Update label visibility
         nodeLabels.style('opacity', d => {
-            if (node.filter(n => n.id === d.id).style('opacity') > 0.1) {
-                return d.type === 'media' ? 1 : 0.7;
+            if (d.type === 'user') {
+                return 1; // Always show user label
             }
+            
+            if (node.filter(n => n.id === d.id).style('opacity') > 0.1) {
+                return d.type === 'media' ? 0.7 : 0.9;
+            }
+            
             return 0.1;
         });
     }
@@ -402,7 +544,12 @@ const graphVisualization = (function() {
             if (!query) {
                 node.style('opacity', 1);
                 link.style('opacity', 0.6);
-                nodeLabels.style('opacity', d => d.type === 'media' ? 1 : 0.7);
+                nodeLabels.style('opacity', d => {
+                    if (d.type === 'user') return 1;
+                    if (d.type === 'tag' || d.type === 'shelf') return 0.9;
+                    return 0.7;
+                });
+                linkLabels.style('opacity', 0);
                 return;
             }
         }
@@ -419,22 +566,35 @@ const graphVisualization = (function() {
         }
         
         // Highlight matching nodes
-        node.style('opacity', d => 
-            matchingNodes.some(n => n.id === d.id) ? 1 : 0.1
-        );
+        node.style('opacity', d => {
+            if (d.type === 'user') {
+                return 1; // Always show user
+            }
+            
+            return matchingNodes.some(n => n.id === d.id) ? 1 : 0.1;
+        });
         
         // Highlight connected links
         link.style('opacity', d => {
             const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
             const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
             
+            // Always show connections to user
+            if (source.type === 'user' || target.type === 'user') {
+                return 0.6;
+            }
+            
             return matchingNodes.some(n => n.id === source.id || n.id === target.id) ? 0.6 : 0.1;
         });
         
         // Highlight matching labels
-        nodeLabels.style('opacity', d => 
-            matchingNodes.some(n => n.id === d.id) ? 1 : 0.1
-        );
+        nodeLabels.style('opacity', d => {
+            if (d.type === 'user') {
+                return 1; // Always show user label
+            }
+            
+            return matchingNodes.some(n => n.id === d.id) ? 1 : 0.1;
+        });
         
         // If there's exactly one match, center on it
         if (matchingNodes.length === 1) {
@@ -451,8 +611,8 @@ const graphVisualization = (function() {
         
         // Calculate the transform to center on the node
         const scale = 1.5;
-        const x = width / 2 - node.x * scale;
-        const y = height / 2 - node.y * scale;
+        const x = -node.x * scale;
+        const y = -node.y * scale;
         
         // Animate to the new position
         svg.transition()
@@ -483,7 +643,7 @@ const graphVisualization = (function() {
             .duration(750)
             .call(
                 zoom.transform,
-                d3.zoomIdentity
+                d3.zoomIdentity.scale(0.8)
             );
     }
 
@@ -495,10 +655,10 @@ const graphVisualization = (function() {
         height = newHeight || height;
         
         svg.attr('width', width)
-            .attr('height', height);
+           .attr('height', height)
+           .attr('viewBox', [-width/2, -height/2, width, height]);
         
-        // Update center force
-        simulation.force('center', d3.forceCenter(width / 2, height / 2));
+        // No need to update center force as we're using a centered viewBox
         simulation.alpha(0.3).restart();
     }
 
