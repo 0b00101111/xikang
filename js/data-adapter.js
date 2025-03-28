@@ -73,6 +73,28 @@ function processNeoDBAData(rawData) {
 
         console.log(`Found ${movieNodes.length} movie nodes`);
 
+        // Track actor appearances for limiting
+        const actorAppearances = new Map(); // Track how many times each actor appears
+
+        // First pass: Count actor appearances
+        movieNodes.forEach(node => {
+            const actorLinks = rawData.graph_data.links.filter(link => {
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                const actorNode = nodeMap.get(sourceId === node.id ? targetId : sourceId);
+                return (sourceId === node.id || targetId === node.id) && 
+                       actorNode?.type === 'person' && 
+                       link.type === 'acted_in';
+            });
+
+            actorLinks.forEach(link => {
+                const actorId = typeof link.source === 'object' ? 
+                    (link.source.id === node.id ? link.target.id : link.source.id) :
+                    (link.source === node.id ? link.target : link.source);
+                actorAppearances.set(actorId, (actorAppearances.get(actorId) || 0) + 1);
+            });
+        });
+
         // Process each movie node
         movieNodes.forEach(node => {
             const nodeId = node.id;
@@ -91,30 +113,31 @@ function processNeoDBAData(rawData) {
             }
 
             // Find and process creator links
-            rawData.graph_data.links
+            const creatorLinks = rawData.graph_data.links
                 .filter(link => {
                     const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
                     const targetId = typeof link.target === 'object' ? link.target.id : link.target;
                     return (sourceId === nodeId || targetId === nodeId) && 
                            !sourceId?.startsWith('shelf_') && 
                            !targetId?.startsWith('shelf_');
-                })
-                .forEach(link => {
-                    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-                    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-                    const otherId = sourceId === nodeId ? targetId : sourceId;
-                    
-                    const creatorNode = nodeMap.get(otherId);
-                    if (creatorNode && (creatorNode.type === 'person' || creatorNode.type === 'creator')) {
+                });
+
+            // Process directors and playwrights first
+            creatorLinks.forEach(link => {
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                const otherId = sourceId === nodeId ? targetId : sourceId;
+                
+                const creatorNode = nodeMap.get(otherId);
+                if (creatorNode && (creatorNode.type === 'person' || creatorNode.type === 'creator')) {
+                    if (link.type === 'directed' || link.type === 'wrote') {
                         // Add creator node if not exists
                         if (!creatorIds.has(otherId)) {
                             processedData.nodes.push({
                                 id: otherId,
                                 name: creatorNode.name,
                                 type: 'creator',
-                                role: link.type === 'directed' ? 'director' :
-                                      link.type === 'acted_in' ? 'actor' :
-                                      link.type === 'wrote' ? 'playwright' : 'unknown'
+                                role: link.type === 'directed' ? 'director' : 'playwright'
                             });
                             creatorIds.add(otherId);
                         }
@@ -126,14 +149,71 @@ function processNeoDBAData(rawData) {
                             type: link.type
                         });
                     }
+                }
+            });
+
+            // Process actors (limited to top 5 most frequent)
+            const actorLinks = creatorLinks
+                .filter(link => {
+                    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                    const actorNode = nodeMap.get(sourceId === nodeId ? targetId : sourceId);
+                    return actorNode?.type === 'person' && link.type === 'acted_in';
+                })
+                .sort((a, b) => {
+                    const actorIdA = typeof a.source === 'object' ? 
+                        (a.source.id === nodeId ? a.target.id : a.source.id) :
+                        (a.source === nodeId ? a.target : a.source);
+                    const actorIdB = typeof b.source === 'object' ? 
+                        (b.source.id === nodeId ? b.target.id : b.source.id) :
+                        (b.source === nodeId ? b.target : b.source);
+                    return (actorAppearances.get(actorIdB) || 0) - (actorAppearances.get(actorIdA) || 0);
+                })
+                .slice(0, 5); // Limit to top 5 actors
+
+            actorLinks.forEach(link => {
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                const actorId = sourceId === nodeId ? targetId : sourceId;
+                const actorNode = nodeMap.get(actorId);
+
+                if (!creatorIds.has(actorId)) {
+                    processedData.nodes.push({
+                        id: actorId,
+                        name: actorNode.name,
+                        type: 'creator',
+                        role: 'actor'
+                    });
+                    creatorIds.add(actorId);
+                }
+
+                processedData.links.push({
+                    source: actorId,
+                    target: nodeId,
+                    type: 'acted_in'
                 });
+            });
         });
 
         // Log statistics
         const movieCount = processedData.nodes.filter(n => n.type === 'movie').length;
         const creatorCount = processedData.nodes.filter(n => n.type === 'creator').length;
-        console.log(`\nProcessed ${movieCount} movies and ${creatorCount} creators`);
-        console.log(`Created ${processedData.links.length} links`);
+        const actorCount = processedData.nodes.filter(n => n.type === 'creator' && n.role === 'actor').length;
+        const directorCount = processedData.nodes.filter(n => n.type === 'creator' && n.role === 'director').length;
+        const playwrightCount = processedData.nodes.filter(n => n.type === 'creator' && n.role === 'playwright').length;
+
+        console.log(`\nProcessed data statistics:`, {
+            totalNodes: processedData.nodes.length,
+            totalLinks: processedData.links.length,
+            movies: movieCount,
+            creators: {
+                total: creatorCount,
+                actors: actorCount,
+                directors: directorCount,
+                playwrights: playwrightCount
+            },
+            averageActorsPerMovie: actorCount / movieCount
+        });
 
         return processedData;
     } catch (error) {
