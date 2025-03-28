@@ -92,6 +92,25 @@ function processNeoDBAData(rawData) {
         const shelfStatus = nodeShelfMap.get(nodeId) || 'unknown';
         const nodeData = node.data || {};
         
+        // Debug raw movie data structure
+        console.log('=== Movie Raw Data ===', {
+            id: node.id,
+            name: node.name,
+            fullData: node,
+            creators: {
+                fromNode: {
+                    director: node.director,
+                    actor: node.actor,
+                    playwright: node.playwright
+                },
+                fromData: {
+                    director: nodeData.director,
+                    actor: nodeData.actor,
+                    playwright: nodeData.playwright
+                }
+            }
+        });
+        
         // Create movie node
         const processedNode = {
             id: nodeId,
@@ -112,11 +131,20 @@ function processNeoDBAData(rawData) {
             console.log('Added movie node:', processedNode);
         }
 
-        // Process creators
+        // Process creators - check both node and nodeData
         const creators = {
-            director: Array.isArray(nodeData.director) ? nodeData.director : [nodeData.director],
-            actor: Array.isArray(nodeData.actor) ? nodeData.actor : [nodeData.actor],
-            playwright: Array.isArray(nodeData.playwright) ? nodeData.playwright : [nodeData.playwright]
+            director: [
+                ...(Array.isArray(node.director) ? node.director : [node.director]),
+                ...(Array.isArray(nodeData.director) ? nodeData.director : [nodeData.director])
+            ].filter(Boolean),
+            actor: [
+                ...(Array.isArray(node.actor) ? node.actor : [node.actor]),
+                ...(Array.isArray(nodeData.actor) ? nodeData.actor : [nodeData.actor])
+            ].filter(Boolean),
+            playwright: [
+                ...(Array.isArray(node.playwright) ? node.playwright : [node.playwright]),
+                ...(Array.isArray(nodeData.playwright) ? nodeData.playwright : [nodeData.playwright])
+            ].filter(Boolean)
         };
 
         // Log creator data for this movie
