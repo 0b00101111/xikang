@@ -78,51 +78,63 @@ def _process_movie_item(item):
     
     return nodes, links
 
-def fetch_paginated_data(api_url, headers, params=None):
-    """Fetch paginated data from the API"""
+def fetch_paginated_data(url, headers, params=None):
+    """Fetch all pages of data from the API"""
     if params is None:
         params = {}
     
     all_items = []
     page = 1
-    page_size = 50  # Default page size
+    items_per_page = 20  # NeoDB seems to use 20 as default page size
     
     while True:
-        current_params = {
-            **params,
-            'page': page,
-            'limit': page_size,  # NeoDB uses 'limit' instead of 'page_size'
-        }
-        
-        print(f"Fetching {api_url} with params: {current_params}")
-        response = requests.get(api_url, headers=headers, params=current_params)
+        current_params = {**params, 'page': page}  # Don't override the default per_page
+        print(f"Fetching {url} with params: {current_params}")
+        response = requests.get(url, headers=headers, params=current_params)
         
         if response.status_code != 200:
-            print(f"Error fetching page {page}: {response.status_code}")
-            print(f"Response: {response.text[:200]}")
+            print(f"Failed to fetch page {page}: {response.text[:200]}")
             break
             
         data = response.json()
+        
+        # Debug: Print response structure for the first page
+        if page == 1:
+            print("First page response structure:")
+            print(json.dumps({k: v for k, v in data.items() if k != 'data'}, indent=2))
+            if data.get('data'):
+                print("Sample items structure:")
+                for i, item in enumerate(data['data'][:3]):  # Show first 3 items
+                    print(f"\nItem {i+1}:")
+                    item_type = item.get('item', {}).get('type', 'unknown')
+                    item_title = item.get('item', {}).get('title', 'untitled')
+                    print(f"Type: {item_type}, Title: {item_title}")
+        
         items = data.get('data', [])
         
         if not items:
-            print("No items found in response")
+            print("No more items found")
             break
-        
-        # Debug first page response
-        if page == 1:
-            print(f"First page sample response: {json.dumps(data, indent=2)[:500]}")
+            
+        # Filter for media items if we're not using category parameter
+        if 'category' not in params:
+            original_count = len(items)
+            items = [item for item in items if _is_movie_item(item)]
+            print(f"Filtered from {original_count} items to {len(items)} media items")
         
         all_items.extend(items)
-        print(f"Fetched page {page} ({len(items)} items, total so far: {len(all_items)})")
+        current_count = len(all_items)
         
-        # Check if we've reached the last page
-        if len(items) < page_size:
+        # If we got less than items_per_page, we're on the last page
+        has_more = len(data.get('data', [])) >= items_per_page  # Check original data length
+        print(f"Fetched page {page} ({len(items)} items, total so far: {current_count})")
+        
+        if not has_more:
             print("Last page reached (got fewer items than page size)")
             break
             
         page += 1
-        time.sleep(0.5)  # Add rate limiting
+        time.sleep(0.5)  # Rate limiting
     
     print(f"Finished fetching all pages. Total items: {len(all_items)}")
     return all_items
@@ -241,13 +253,14 @@ def fetch_neodb_data():
     print(f"Fetching NeoDB movie data for user: {NEODB_USERNAME}")
     
     # Base URL for the API
-    BASE_URL = "https://neodb.social/api"
+    BASE_URL = "https://neodb.social"
     
     # Setup headers with full authorization
     headers = {
         'User-Agent': 'Mozilla/5.0 (compatible; MovieDataFetcher/1.0)',
         'Accept': 'application/json',
-        'Authorization': f"Bearer {NEODB_ACCESS_TOKEN}"
+        'Authorization': f"Bearer {NEODB_ACCESS_TOKEN}",
+        'X-Client-ID': NEODB_CLIENT_ID
     }
     
     # Initialize data structure
@@ -266,7 +279,7 @@ def fetch_neodb_data():
     # Verify user profile
     try:
         print("\n1. Verifying user profile")
-        response = requests.get(f"{BASE_URL}/me", headers=headers)
+        response = requests.get(f"{BASE_URL}/api/me", headers=headers)
         if response.status_code != 200:
             print(f"Failed to verify user: {response.text[:200]}")
             return False
@@ -284,24 +297,29 @@ def fetch_neodb_data():
     for shelf_type in shelf_types:
         try:
             print(f"\n2. Fetching movies from '{shelf_type}' shelf")
-            endpoint = f"{BASE_URL}/me/shelf/{shelf_type}"  # Include shelf type in path
+            endpoint = f"{BASE_URL}/api/me/shelf/{shelf_type}"
             
-            # Updated parameters based on NeoDB API requirements
-            params = {
-                'page': 1,
-                'limit': 50
-            }
-            
+            # Try first with type=movie
+            params = {'type': 'movie'}
             items = fetch_paginated_data(endpoint, headers, params)
+            
+            if not items:
+                # If no items found, try with category=movie
+                print("Retrying with category=movie parameter...")
+                params = {'category': 'movie'}
+                items = fetch_paginated_data(endpoint, headers, params)
+            
+            if not items:
+                # If still no items, try without filter and let the code filter movies
+                print("Retrying without category filter...")
+                items = fetch_paginated_data(endpoint, headers)
+            
             print(f"Found {len(items)} movies on {shelf_type} shelf")
             
             # Process each movie
             for item in items:
                 movie_data = item.get('item', {})
-                if not movie_data or movie_data.get('type') != 'movie':  # Only process movies
-                    continue
-                    
-                movie_id = str(movie_data.get('id'))  # Ensure ID is string
+                movie_id = movie_data.get('uuid')
                 
                 if not movie_id:
                     continue
@@ -324,7 +342,7 @@ def fetch_neodb_data():
                                 'area': detailed_data.get('area', []),
                                 'language': detailed_data.get('language', []),
                                 'duration': detailed_data.get('duration'),
-                                'rating': item.get('rating', {}).get('value'),
+                                'rating': item.get('rating'),
                                 'comment': item.get('comment'),
                                 'description': detailed_data.get('description')
                             }
@@ -341,7 +359,7 @@ def fetch_neodb_data():
                             'shelf': shelf_type,
                             'data': {
                                 'url': movie_data.get('url'),
-                                'rating': item.get('rating', {}).get('value'),
+                                'rating': item.get('rating'),
                                 'comment': item.get('comment')
                             }
                         }
