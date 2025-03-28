@@ -61,26 +61,9 @@ const graphVisualization = (function() {
     }
 
     // Zoom control functions
-    function zoomIn() {
-        if (!svg || !zoom) return;
-        svg.transition()
-            .duration(750)
-            .call(zoom.scaleBy, 1.3);
-    }
-
-    function zoomOut() {
-        if (!svg || !zoom) return;
-        svg.transition()
-            .duration(750)
-            .call(zoom.scaleBy, 0.7);
-    }
-
-    function resetView() {
-        if (!svg || !zoom) return;
-        svg.transition()
-            .duration(750)
-            .call(zoom.transform, d3.zoomIdentity);
-    }
+    function zoomIn() {}
+    function zoomOut() {}
+    function resetView() {}
 
     // Filter nodes by category
     function filterByCategory(category) {
@@ -194,50 +177,33 @@ const graphVisualization = (function() {
             .attr('width', '100%')
             .attr('height', '100%')
             .attr('viewBox', [-width/2, -height/2, width, height])
-            .style('background', '#ffffff')
-            .style('overflow', 'visible');
-        
-        // Create zoom behavior with initial zoom to fit
-        zoom = d3.zoom()
-            .scaleExtent([0.1, 10])
-            .on('zoom', (event) => {
-                g.attr('transform', event.transform);
-            });
-        
-        svg.call(zoom);
+            .style('background', '#ffffff');
         
         // Create main group
         g = svg.append('g');
+
+        // Create container groups for visual elements
+        const linkGroup = g.append('g').attr('class', 'links');
+        const nodeGroup = g.append('g').attr('class', 'nodes');
+        const labelGroup = g.append('g').attr('class', 'labels');
         
-        // Create links with reduced opacity for better performance
-        link = g.append('g')
-            .attr('class', 'links')
-            .selectAll('line')
+        // Create static elements
+        link = linkGroup.selectAll('line')
             .data(links)
             .join('line')
             .attr('stroke', colorUtils.PALETTE.fujiGray)
             .attr('stroke-opacity', 0.2)
             .attr('stroke-width', 0.3);
         
-        // Create nodes with smaller radius
-        node = g.append('g')
-            .attr('class', 'nodes')
-            .selectAll('circle')
+        node = nodeGroup.selectAll('circle')
             .data(nodes)
             .join('circle')
-            .attr('r', d => getNodeSize(d) * 0.8) // Smaller nodes
+            .attr('r', d => getNodeSize(d) * 0.8)
             .attr('fill', getNodeColor)
             .attr('stroke', '#fff')
-            .attr('stroke-width', 0.3)
-            .call(d3.drag()
-                .on('start', dragstarted)
-                .on('drag', dragged)
-                .on('end', dragended));
+            .attr('stroke-width', 0.3);
         
-        // Create labels with initial low opacity
-        nodeLabels = g.append('g')
-            .attr('class', 'labels')
-            .selectAll('text')
+        nodeLabels = labelGroup.selectAll('text')
             .data(nodes)
             .join('text')
             .attr('dx', 6)
@@ -249,38 +215,64 @@ const graphVisualization = (function() {
             .style('pointer-events', 'none')
             .style('user-select', 'none')
             .style('opacity', 0.5);
+
+        // Fixed zoom level - no dynamic zooming
+        const fixedScale = 0.5;
+        g.attr('transform', `scale(${fixedScale})`);
         
         // Optimized force simulation
         simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(links)
                 .id(d => d.id)
-                .distance(30) // Shorter distances
-                .strength(0.1)) // Weaker links
+                .distance(30)
+                .strength(0.1))
             .force('charge', d3.forceManyBody()
-                .strength(-10) // Weaker repulsion
-                .distanceMax(100)) // Shorter distance max
+                .strength(-10)
+                .distanceMax(100))
             .force('x', d3.forceX().strength(0.02))
             .force('y', d3.forceY().strength(0.02))
             .force('collision', d3.forceCollide()
                 .radius(d => getNodeSize(d) * 1.2)
                 .strength(0.2))
-            .velocityDecay(0.6) // Faster stabilization
-            .alphaDecay(0.05) // Faster cooling
-            .alpha(0.3) // Lower initial energy
+            .velocityDecay(0.6)
+            .alphaDecay(0.05)
+            .alpha(0.3)
             .on('tick', () => {
-                // Batch DOM updates for better performance
+                // Viewport culling - only render nodes within view
+                const scale = fixedScale;
+                const margin = 100; // Extra margin to prevent pop-in
+                const visibleX = [-width/(2*scale) - margin, width/(2*scale) + margin];
+                const visibleY = [-height/(2*scale) - margin, height/(2*scale) + margin];
+
+                // Update positions but only render visible elements
+                nodes.forEach(d => {
+                    d.visible = (
+                        d.x >= visibleX[0] && d.x <= visibleX[1] &&
+                        d.y >= visibleY[0] && d.y <= visibleY[1]
+                    );
+                });
+
+                // Only update visible elements
                 requestAnimationFrame(() => {
-                    link
+                    // Update visible links
+                    link.attr('visibility', d => 
+                        (d.source.visible && d.target.visible) ? 'visible' : 'hidden'
+                    );
+                    link.filter(d => d.source.visible && d.target.visible)
                         .attr('x1', d => d.source.x)
                         .attr('y1', d => d.source.y)
                         .attr('x2', d => d.target.x)
                         .attr('y2', d => d.target.y);
 
-                    node
+                    // Update visible nodes
+                    node.attr('visibility', d => d.visible ? 'visible' : 'hidden');
+                    node.filter(d => d.visible)
                         .attr('cx', d => d.x)
                         .attr('cy', d => d.y);
 
-                    nodeLabels
+                    // Update visible labels
+                    nodeLabels.attr('visibility', d => d.visible ? 'visible' : 'hidden');
+                    nodeLabels.filter(d => d.visible)
                         .attr('x', d => d.x)
                         .attr('y', d => d.y);
                 });
@@ -293,18 +285,6 @@ const graphVisualization = (function() {
                 console.log('Simulation stopped');
             }
         }, 1000);
-
-        // Initial zoom to fit
-        const bounds = g.node().getBBox();
-        const fullWidth = bounds.width;
-        const fullHeight = bounds.height;
-        const scale = 0.8 / Math.max(fullWidth / width, fullHeight / height);
-        const transform = d3.zoomIdentity
-            .translate(width/2, height/2)
-            .scale(scale)
-            .translate(-bounds.x - fullWidth/2, -bounds.y - fullHeight/2);
-        
-        svg.call(zoom.transform, transform);
 
         // Add hover and click behaviors
         setupNodeInteractions();
