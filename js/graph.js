@@ -1,5 +1,5 @@
-// Minimal graph visualization using D3.js
-// This file implements a clean graph visualization with node labels and tooltips
+// Movie-only graph visualization using D3.js
+// This file implements a clean graph visualization just for movies
 
 const graphVisualization = (function() {
     // Private variables
@@ -9,45 +9,53 @@ const graphVisualization = (function() {
     let selectedNode = null;
     let zoom;
 
-    // Simple color scheme
-    const nodeColors = {
-        user: '#555',
-        tag: '#86C3D7',
-        shelf: '#FFD166',
-        book: '#5D7CA6',
-        movie: '#E07A5F',
-        tv: '#8D6A9F',
-        music: '#D62828',
-        podcast: '#5FA8D3',
-        game: '#8EA604',
-        Edition: '#5D7CA6',  // Same as book
-        album: '#D62828',    // Same as music
-        media: '#5D7CA6',    // Default media color
-        creator: '#FFA500',  // Default creator color
-        author: '#3A86FF',
-        director: '#FB8500',
-        actor: '#FF006E',
-        artist: '#8338EC',
-        category: '#2A9D8F'  // Organizational node
-    };
+    // Color scheme for movies
+    const movieColor = '#E07A5F';
+    const directorColor = '#FB8500';
+    const actorColor = '#FF006E';
 
-    // Get node color based on type
+    // Get node color based on type and shelf status
     function getNodeColor(d) {
-        if (d.type === 'media' && d.category) {
-            return nodeColors[d.category] || nodeColors.media;
+        if (d.type === 'movie') {
+            // Color based on shelf status
+            if (d.shelf === 'wishlist') {
+                return '#a0a0a0'; // Grey for wishlist items
+            } else if (d.shelf === 'dropped') {
+                return '#c0c0c0'; // Light grey for dropped items
+            } else {
+                return movieColor; // Full color for complete/progress
+            }
+        } else if (d.type === 'creator') {
+            if (d.role === 'director') {
+                return directorColor;
+            } else if (d.role === 'actor') {
+                return actorColor;
+            }
         }
-        if (d.type === 'creator' && d.category) {
-            return nodeColors[d.category] || nodeColors.creator;
-        }
-        return nodeColors[d.type] || '#999';
+        return '#999'; // Default color
     }
 
-    // Get fixed node size
+    // Get node opacity based on shelf status
+    function getNodeOpacity(d) {
+        if (d.type === 'movie' && d.shelf === 'progress') {
+            return 0.5; // Half transparent for in-progress items
+        }
+        return 1.0; // Full opacity for all other nodes
+    }
+
+    // Get node size based on type and importance
     function getNodeSize(d) {
-        if (d.type === 'user' || d.type === 'category') return 6;
-        if (d.type === 'tag' || d.type === 'shelf') return 5;
-        if (d.type === 'creator') return 4.5;
-        return 4; // Media items
+        if (d.type === 'creator') {
+            if (d.role === 'director') {
+                return 5; // Directors slightly larger
+            }
+            return 4; // Actors
+        }
+        // Movies sized by rating if available
+        if (d.type === 'movie' && d.rating) {
+            return 3 + (d.rating / 10) * 3; // Size 3-6 based on rating
+        }
+        return 4; // Default size
     }
 
     // Initialize the visualization
@@ -99,14 +107,40 @@ const graphVisualization = (function() {
             .style('z-index', '1000')
             .style('max-width', '250px');
         
+        // Create links with arrowheads for directional relationships
+        const linkGroup = g.append('g');
+        
+        // Add directional marker definitions
+        svg.append('defs').selectAll('marker')
+            .data(['director', 'actor', 'worked_with', 'co_actor'])
+            .enter().append('marker')
+            .attr('id', d => `arrow-${d}`)
+            .attr('viewBox', '0 -5 10 10')
+            .attr('refX', 15)
+            .attr('refY', 0)
+            .attr('markerWidth', 6)
+            .attr('markerHeight', 6)
+            .attr('orient', 'auto')
+            .append('path')
+            .attr('fill', '#999')
+            .attr('d', 'M0,-5L10,0L0,5');
+        
         // Create links
-        link = g.append('g')
-            .selectAll('line')
+        link = linkGroup.selectAll('line')
             .data(links)
             .enter().append('line')
             .attr('stroke', '#e0e0e0')
             .attr('stroke-opacity', 0.5)
-            .attr('stroke-width', 1);
+            .attr('stroke-width', d => {
+                if (d.type === 'director' || d.type === 'actor') {
+                    return 1.5;
+                } else if (d.type === 'worked_with') {
+                    return 1;
+                } else if (d.type === 'co_actor') {
+                    return 0.5;
+                }
+                return 1;
+            });
         
         // Create nodes
         node = g.append('g')
@@ -115,6 +149,7 @@ const graphVisualization = (function() {
             .enter().append('circle')
             .attr('r', getNodeSize)
             .attr('fill', getNodeColor)
+            .attr('opacity', getNodeOpacity)
             .attr('stroke', '#fff')
             .attr('stroke-width', 1)
             .call(d3.drag()
@@ -132,40 +167,43 @@ const graphVisualization = (function() {
             .text(d => d.name)
             .attr('font-family', 'sans-serif')
             .attr('font-size', d => {
-                if (d.type === 'user' || d.type === 'category') return '10px';
-                return '8px';  // Smaller font for media items
+                if (d.type === 'movie') return '8px';
+                if (d.role === 'director') return '9px';
+                return '8px';
             })
             .attr('fill', '#555')
             .style('pointer-events', 'none')
             .style('user-select', 'none')
             .style('opacity', d => {
-                if (d.type === 'user' || d.type === 'category') return 0.9;
-                return 0.7;  // Slightly less visible for media items
+                if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
+                if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
+                if (d.role === 'director') return 0.9;
+                return 0.7;
             });
         
-        // Create force simulation with more space
+        // Create force simulation with movie-specific forces
         simulation = d3.forceSimulation(nodes)
             // Links with variable distances
             .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
                 const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
                 const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
                 
-                if (source.type === 'category' || target.type === 'category') {
-                    return 150; // Links to category nodes are longer
-                } else if (source.type === 'creator' || target.type === 'creator') {
-                    return 80;  // Links to creators are medium
-                } else if (source.type === 'tag' || target.type === 'tag' ||
-                           source.type === 'shelf' || target.type === 'shelf') {
-                    return 100; // Links to organizational nodes medium
+                if (!source || !target) return 50;
+                
+                if (d.type === 'director' || d.type === 'actor') {
+                    return 70; // Movie to creator links
+                } else if (d.type === 'worked_with') {
+                    return 100; // Director to actor links
+                } else if (d.type === 'co_actor') {
+                    return 80; // Actor to actor links
                 }
-                return 30; // Default is shorter
+                return 50; // Default distance
             }))
             // Strong repulsive force
             .force('charge', d3.forceManyBody().strength(d => {
-                if (d.type === 'category') return -800;
-                if (d.type === 'creator') return -200;
-                if (d.type === 'tag' || d.type === 'shelf') return -300;
-                return -100;
+                if (d.role === 'director') return -300;
+                if (d.role === 'actor') return -200;
+                return -100; // Movies
             }))
             // Very weak center gravity
             .force('x', d3.forceX().strength(0.01))
@@ -177,35 +215,32 @@ const graphVisualization = (function() {
         node.on('mouseover', function(event, d) {
             // Show tooltip with node details
             let tooltipContent = `<strong>${d.name}</strong><br>`;
-            tooltipContent += `Type: ${d.type === 'media' ? d.category : d.type}`;
             
-            // Add any additional properties if available
-            if (d.role) {
-                tooltipContent += `<br>Role: ${d.role}`;
-            }
-            if (d.rating) {
-                tooltipContent += `<br>Rating: ${d.rating}/10`;
-            }
-            
-            // Show connections if any
-            const connections = links.filter(link => 
-                (typeof link.source === 'object' ? link.source.id === d.id : link.source === d.id) || 
-                (typeof link.target === 'object' ? link.target.id === d.id : link.target === d.id)
-            );
-            
-            if (connections.length > 0) {
-                tooltipContent += `<br><br>Connected to:`;
-                const connectedNodes = new Set();
-                connections.forEach(link => {
-                    const connectedId = (typeof link.source === 'object' ? link.source.id : link.source) === d.id 
-                        ? (typeof link.target === 'object' ? link.target.id : link.target) 
-                        : (typeof link.source === 'object' ? link.source.id : link.source);
-                    const connectedNode = nodes.find(n => n.id === connectedId);
-                    if (connectedNode && !connectedNodes.has(connectedId)) {
-                        connectedNodes.add(connectedId);
-                        tooltipContent += `<br>• ${connectedNode.name} (${link.type || 'linked'})`;
-                    }
-                });
+            if (d.type === 'movie') {
+                tooltipContent += `Type: Movie<br>Status: ${d.shelf || 'Unknown'}`;
+                
+                if (d.rating) {
+                    tooltipContent += `<br>Rating: ${d.rating}/10`;
+                }
+            } else if (d.type === 'creator') {
+                tooltipContent += `Role: ${d.role || 'Creator'}`;
+                
+                // Find connected movies for this creator
+                const connectedMovies = links
+                    .filter(link => 
+                        (typeof link.source === 'object' ? link.source.id === d.id : link.source === d.id) && 
+                        nodes.find(n => n.id === (typeof link.target === 'object' ? link.target.id : link.target) && n.type === 'movie')
+                    )
+                    .map(link => typeof link.target === 'object' ? link.target.id : link.target)
+                    .map(movieId => nodes.find(n => n.id === movieId))
+                    .filter(Boolean);
+                
+                if (connectedMovies.length > 0) {
+                    tooltipContent += `<br><br>Movies:`;
+                    connectedMovies.forEach(movie => {
+                        tooltipContent += `<br>• ${movie.name}`;
+                    });
+                }
             }
             
             tooltip.html(tooltipContent)
@@ -227,7 +262,17 @@ const graphVisualization = (function() {
             .style('stroke-width', l => {
                 const source = typeof l.source === 'object' ? l.source.id : l.source;
                 const target = typeof l.target === 'object' ? l.target.id : l.target;
-                return (source === d.id || target === d.id) ? 1.5 : 0.5;
+                if (source === d.id || target === d.id) {
+                    if (l.type === 'director' || l.type === 'actor') {
+                        return 2;
+                    } else if (l.type === 'worked_with') {
+                        return 1.5;
+                    } else if (l.type === 'co_actor') {
+                        return 1;
+                    }
+                    return 1.5;
+                }
+                return 0.5;
             });
             
             // Highlight connected nodes
@@ -238,7 +283,12 @@ const graphVisualization = (function() {
                     return (source === d.id && target === n.id) || (target === d.id && source === n.id);
                 });
                 
-                return n.id === d.id || isConnected ? 1 : 0.2;
+                if (n.id === d.id) return 1;
+                if (isConnected) {
+                    if (n.type === 'movie' && n.shelf === 'progress') return 0.7;
+                    return 1;
+                }
+                return 0.2;
             });
             
             // Highlight relevant labels
@@ -249,8 +299,11 @@ const graphVisualization = (function() {
                     return (source === d.id && target === n.id) || (target === d.id && source === n.id);
                 });
                 
-                if (n.id === d.id || isConnected) {
-                    return n.type === 'media' ? 0.9 : 1;
+                if (n.id === d.id) return 1;
+                if (isConnected) {
+                    if (n.type === 'movie') return 0.9;
+                    if (n.role === 'director') return 1;
+                    return 0.9;
                 }
                 return 0.1;
             });
@@ -264,16 +317,30 @@ const graphVisualization = (function() {
             // Hide tooltip
             tooltip.style('visibility', 'hidden');
             
-            // Reset all styles
-            link.style('stroke', '#e0e0e0')
-                .style('stroke-opacity', 0.5)
-                .style('stroke-width', 1);
-            
-            node.style('opacity', 1);
-            nodeLabels.style('opacity', d => {
-                if (d.type === 'user' || d.type === 'category') return 0.9;
-                return 0.7;
-            });
+            // Reset all styles if no node is selected
+            if (!selectedNode) {
+                link.style('stroke', '#e0e0e0')
+                    .style('stroke-opacity', 0.5)
+                    .style('stroke-width', d => {
+                        if (d.type === 'director' || d.type === 'actor') {
+                            return 1.5;
+                        } else if (d.type === 'worked_with') {
+                            return 1;
+                        } else if (d.type === 'co_actor') {
+                            return 0.5;
+                        }
+                        return 1;
+                    });
+                
+                node.style('opacity', getNodeOpacity);
+                
+                nodeLabels.style('opacity', d => {
+                    if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
+                    if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
+                    if (d.role === 'director') return 0.9;
+                    return 0.7;
+                });
+            }
         });
         
         // Add click behavior for persisting selection
@@ -288,14 +355,25 @@ const graphVisualization = (function() {
                 // Reset styles
                 link.style('stroke', '#e0e0e0')
                     .style('stroke-opacity', 0.5)
-                    .style('stroke-width', 1);
+                    .style('stroke-width', d => {
+                        if (d.type === 'director' || d.type === 'actor') {
+                            return 1.5;
+                        } else if (d.type === 'worked_with') {
+                            return 1;
+                        } else if (d.type === 'co_actor') {
+                            return 0.5;
+                        }
+                        return 1;
+                    });
                 
-                node.style('opacity', 1)
+                node.style('opacity', getNodeOpacity)
                     .style('stroke', '#fff')
                     .style('stroke-width', 1);
                 
                 nodeLabels.style('opacity', d => {
-                    if (d.type === 'user' || d.type === 'category') return 0.9;
+                    if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
+                    if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
+                    if (d.role === 'director') return 0.9;
                     return 0.7;
                 });
             } else {
@@ -316,7 +394,17 @@ const graphVisualization = (function() {
                 .style('stroke-width', l => {
                     const source = typeof l.source === 'object' ? l.source.id : l.source;
                     const target = typeof l.target === 'object' ? l.target.id : l.target;
-                    return (source === d.id || target === d.id) ? 1.5 : 0.5;
+                    if (source === d.id || target === d.id) {
+                        if (l.type === 'director' || l.type === 'actor') {
+                            return 2;
+                        } else if (l.type === 'worked_with') {
+                            return 1.5;
+                        } else if (l.type === 'co_actor') {
+                            return 1;
+                        }
+                        return 1.5;
+                    }
+                    return 0.5;
                 });
                 
                 // Highlight connected nodes
@@ -332,7 +420,12 @@ const graphVisualization = (function() {
                         d3.select(this).style('stroke', '#000').style('stroke-width', 2);
                     }
                     
-                    return n.id === d.id || isConnected ? 1 : 0.2;
+                    if (n.id === d.id) return 1;
+                    if (isConnected) {
+                        if (n.type === 'movie' && n.shelf === 'progress') return 0.7;
+                        return 1;
+                    }
+                    return 0.2;
                 });
                 
                 // Highlight relevant labels
@@ -343,8 +436,11 @@ const graphVisualization = (function() {
                         return (source === d.id && target === n.id) || (target === d.id && source === n.id);
                     });
                     
-                    if (n.id === d.id || isConnected) {
-                        return n.type === 'media' ? 0.9 : 1;
+                    if (n.id === d.id) return 1;
+                    if (isConnected) {
+                        if (n.type === 'movie') return 0.9;
+                        if (n.role === 'director') return 1;
+                        return 0.9;
                     }
                     return 0.1;
                 });
@@ -359,92 +455,21 @@ const graphVisualization = (function() {
                 // Reset styles
                 link.style('stroke', '#e0e0e0')
                     .style('stroke-opacity', 0.5)
-                    .style('stroke-width', 1);
+                    .style('stroke-width', d => {
+                        if (d.type === 'director' || d.type === 'actor') {
+                            return 1.5;
+                        } else if (d.type === 'worked_with') {
+                            return 1;
+                        } else if (d.type === 'co_actor') {
+                            return 0.5;
+                        }
+                        return 1;
+                    });
                 
-                node.style('opacity', 1)
+                node.style('opacity', getNodeOpacity)
                     .style('stroke', '#fff')
                     .style('stroke-width', 1);
                 
                 nodeLabels.style('opacity', d => {
-                    if (d.type === 'user' || d.type === 'category') return 0.9;
-                    return 0.7;
-                });
-            }
-        });
-        
-        // Update positions on simulation tick
-        simulation.on('tick', () => {
-            link
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
-            
-            node
-                .attr('cx', d => d.x)
-                .attr('cy', d => d.y);
-            
-            nodeLabels
-                .attr('x', d => d.x)
-                .attr('y', d => d.y);
-        });
-        
-        // Initial centering zoom
-        svg.call(zoom.transform, d3.zoomIdentity.scale(0.7));
-    }
-
-    // Drag functions
-    function dragstarted(event, d) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
-    }
-
-    function dragged(event, d) {
-        d.fx = event.x;
-        d.fy = event.y;
-    }
-
-    function dragended(event, d) {
-        if (!event.active) simulation.alphaTarget(0);
-        // Keep category nodes fixed if dragged
-        if (d.type !== 'category') {
-            d.fx = null;
-            d.fy = null;
-        }
-    }
-
-    // Zooming controls
-    function zoomIn() {
-        svg.transition().duration(300).call(zoom.scaleBy, 1.5);
-    }
-
-    function zoomOut() {
-        svg.transition().duration(300).call(zoom.scaleBy, 0.67);
-    }
-
-    function resetView() {
-        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.scale(0.7));
-    }
-
-    // Window resize handler
-    function resize() {
-        const container = document.getElementById('graph-container');
-        width = container.clientWidth;
-        height = container.clientHeight;
-        
-        svg.attr('viewBox', [-width/2, -height/2, width, height]);
-        
-        // Restart simulation gently
-        simulation.alpha(0.1).restart();
-    }
-
-    // Public API - only expose necessary methods
-    return {
-        init: init,
-        zoomIn: zoomIn,
-        zoomOut: zoomOut,
-        resetView: resetView,
-        resize: resize
-    };
-})();
+                    if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
+                    if (d.type === 'movie' && d.shelf === 'dropped') return 0
