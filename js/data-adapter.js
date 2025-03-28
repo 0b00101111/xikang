@@ -53,6 +53,27 @@ function processNeoDBAData(rawData) {
                        (node.data && (node.data.type === 'movie' || node.data.category === 'movie'));
         
         if (isMovie) {
+            // Deep inspect the first few movie nodes
+            if (movieNodes?.length < 3) {
+                console.log('=== DETAILED MOVIE NODE INSPECTION ===');
+                console.log('Node structure:', JSON.stringify(node, null, 2));
+                console.log('Available fields:', Object.keys(node));
+                if (node.data) {
+                    console.log('Data fields:', Object.keys(node.data));
+                }
+                // Look for any fields that might contain creator information
+                const potentialCreatorFields = Object.entries(node)
+                    .filter(([key, value]) => 
+                        typeof value === 'object' && 
+                        value !== null && 
+                        !Array.isArray(value) &&
+                        key !== 'data'
+                    );
+                if (potentialCreatorFields.length > 0) {
+                    console.log('Potential creator-containing fields:', potentialCreatorFields);
+                }
+            }
+            
             console.log('Found movie node:', {
                 id: node.id,
                 name: node.name,
