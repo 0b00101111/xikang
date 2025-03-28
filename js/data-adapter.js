@@ -1,4 +1,117 @@
-// Process shelf data
+// Enhanced NeoDB Data Adapter
+// This script converts the data from NeoDB API to the format expected by the visualization
+// It also reorganizes the graph to improve layout and add relationship information
+
+function processNeoDBAData(rawData) {
+    // Check if data is in the expected format
+    if (!rawData || !rawData.graph_data) {
+        console.error("Invalid data format: Missing graph_data structure");
+        return null;
+    }
+
+    // Start with our processed data structure
+    const processedData = {
+        nodes: [],
+        links: [],
+        metadata: {
+            username: rawData.metadata?.username || "Unknown",
+            handle: rawData.metadata?.handle || "Unknown",
+            lastUpdated: rawData.metadata?.fetch_time || new Date().toISOString(),
+            mediaTypes: [],
+            creatorTypes: []
+        }
+    };
+    
+    // Track node IDs to avoid duplicates
+    const nodeIds = new Set();
+    
+    // Set of unique media types to build metadata.mediaTypes
+    const mediaTypes = new Set();
+    
+    // Create the user node as the central point
+    const username = rawData.user?.display_name || rawData.metadata?.username || "User";
+    const userNode = {
+        id: 'user',
+        name: username,
+        type: 'user',
+        size: 30
+    };
+    processedData.nodes.push(userNode);
+    nodeIds.add('user');
+    
+    // Create nodes for shelves (one per shelf type)
+    const shelfTypes = {
+        'wishlist': 'Wishlist',
+        'progress': 'In Progress',
+        'complete': 'Completed',
+        'dropped': 'Dropped'
+    };
+    
+    Object.entries(shelfTypes).forEach(([id, name]) => {
+        const shelfId = `shelf_${id}`;
+        processedData.nodes.push({
+            id: shelfId,
+            name: name,
+            type: 'shelf',
+            size: 15
+        });
+        nodeIds.add(shelfId);
+        
+        // Link shelf to user
+        processedData.links.push({
+            source: 'user',
+            target: shelfId,
+            type: 'has_shelf',
+            value: 3
+        });
+    });
+    
+    // Create tag nodes
+    if (rawData.tags && rawData.tags.data) {
+        rawData.tags.data.forEach(tag => {
+            const tagName = tag.name || 'Unnamed Tag';
+            const tagId = `tag_${tag.uuid}`;
+            
+            // Add tag node if it doesn't exist yet
+            if (!nodeIds.has(tagId)) {
+                processedData.nodes.push({
+                    id: tagId,
+                    name: tagName,
+                    type: 'tag',
+                    size: 12,
+                    uuid: tag.uuid
+                });
+                nodeIds.add(tagId);
+                
+                // Link tag to user
+                processedData.links.push({
+                    source: 'user',
+                    target: tagId,
+                    type: 'has_tag',
+                    value: 2
+                });
+            }
+            
+            // Process tag items if available
+            if (tag.items && Array.isArray(tag.items)) {
+                tag.items.forEach(item => {
+                    const itemId = processMediaItem(item, processedData);
+                    
+                    if (itemId) {
+                        // Link item to tag
+                        processedData.links.push({
+                            source: tagId,
+                            target: itemId,
+                            type: 'tagged_with',
+                            value: 1
+                        });
+                    }
+                });
+            }
+        });
+    }
+    
+    // Process shelf data
     if (rawData.shelf_items) {
         Object.entries(rawData.shelf_items).forEach(([key, shelfData]) => {
             if (!shelfData || !shelfData.data || !Array.isArray(shelfData.data)) {
@@ -113,113 +226,5 @@
     // For now, we don't have creator types in the API data, so we'll leave it empty
     processedData.metadata.creatorTypes = [];
 
-    return processedData;// Enhanced NeoDB Data Adapter
-// This script converts the data from NeoDB API to the format expected by the visualization
-// It also reorganizes the graph to improve layout and add relationship information
-
-function processNeoDBAData(rawData) {
-    // Check if data is in the expected format
-    if (!rawData || !rawData.graph_data) {
-        console.error("Invalid data format: Missing graph_data structure");
-        return null;
-    }
-
-    // Start with our processed data structure
-    const processedData = {
-        nodes: [],
-        links: [],
-        metadata: {
-            username: rawData.metadata?.username || "Unknown",
-            handle: rawData.metadata?.handle || "Unknown",
-            lastUpdated: rawData.metadata?.fetch_time || new Date().toISOString(),
-            mediaTypes: [],
-            creatorTypes: []
-        }
-    };
-    
-    // Track node IDs to avoid duplicates
-    const nodeIds = new Set();
-
-    // Set of unique media types to build metadata.mediaTypes
-    const mediaTypes = new Set();
-    
-    // Create the user node as the central point
-    const username = rawData.user?.display_name || rawData.metadata?.username || "User";
-    const userNode = {
-        id: 'user',
-        name: username,
-        type: 'user',
-        size: 30
-    };
-    processedData.nodes.push(userNode);
-    nodeIds.add('user');
-    
-    // Create nodes for shelves (one per shelf type)
-    const shelfTypes = {
-        'wishlist': 'Wishlist',
-        'progress': 'In Progress',
-        'complete': 'Completed',
-        'dropped': 'Dropped'
-    };
-    
-    Object.entries(shelfTypes).forEach(([id, name]) => {
-        const shelfId = `shelf_${id}`;
-        processedData.nodes.push({
-            id: shelfId,
-            name: name,
-            type: 'shelf',
-            size: 15
-        });
-        nodeIds.add(shelfId);
-        
-        // Link shelf to user
-        processedData.links.push({
-            source: 'user',
-            target: shelfId,
-            type: 'has_shelf',
-            value: 3
-        });
-    });
-    
-    // Create tag nodes
-    if (rawData.tags && rawData.tags.data) {
-        rawData.tags.data.forEach(tag => {
-            const tagName = tag.name || 'Unnamed Tag';
-            const tagId = `tag_${tag.uuid}`;
-            
-            // Add tag node if it doesn't exist yet
-            if (!nodeIds.has(tagId)) {
-                processedData.nodes.push({
-                    id: tagId,
-                    name: tagName,
-                    type: 'tag',
-                    size: 12,
-                    uuid: tag.uuid
-                });
-                nodeIds.add(tagId);
-                
-                // Link tag to user
-                processedData.links.push({
-                    source: 'user',
-                    target: tagId,
-                    type: 'has_tag',
-                    value: 2
-                });
-            }
-            
-            // Process tag items if available
-            if (tag.items && Array.isArray(tag.items)) {
-                tag.items.forEach(item => {
-                    const itemId = processMediaItem(item, processedData);
-                    
-                    if (itemId) {
-                        // Link item to tag
-                        processedData.links.push({
-                            source: tagId,
-                            target: itemId,
-                            type: 'tagged_with',
-                            value: 1
-                        });
-                    }
-                });
-            }
+    return processedData;
+}
