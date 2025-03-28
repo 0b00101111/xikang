@@ -1,1 +1,22 @@
-{"nodes": [], "links": [], "metadata": {"mediaTypes": [], "creatorTypes": [], "lastUpdated": "2025-03-28T03:41:33.060612"}}
+{
+  "user": {
+    "url": "https://neodb.social/users/shuang/",
+    "external_acct": "shuyingyin@yangyang.how",
+    "external_accounts": [
+      {
+        "platform": "email",
+        "handle": "shuyingyin@yangyang.how",
+        "url": null
+      },
+      {
+        "platform": "mastodon",
+        "handle": "shuyingyin@yangyang.how",
+        "url": "https://yangyang.how/@shuyingyin"
+      }
+    ],
+    "display_name": "Shuang",
+    "avatar": "https://neodb.social/media/profile_images/2024/8/12/iqk2jzmSDBeYlE-jyrEDPuG7JZc.png",
+    "username": "shuang",
+    "roles": []
+  }
+}
