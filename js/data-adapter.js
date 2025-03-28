@@ -27,30 +27,7 @@ function processNeoDBAData(rawData) {
         totalNodes: rawData.graph_data.nodes.length,
         totalLinks: rawData.graph_data.links.length
     });
-    
-    console.log("\nFirst 10 nodes:");
-    rawData.graph_data.nodes.slice(0, 10).forEach(node => {
-        console.log({
-            id: node.id,
-            name: node.name,
-            type: node.type,
-            category: node.category,
-            data: node.data
-        });
-    });
-    
-    console.log("\nFirst 10 links:");
-    rawData.graph_data.links.slice(0, 10).forEach(link => {
-        console.log({
-            source: link.source,
-            target: link.target,
-            type: link.type
-        });
-    });
-    
-    console.log("\n=== STARTING PROCESSING ===");
-    console.log("Processing NeoDB data for movie visualization");
-    
+
     // Check if data is in the expected format
     if (!rawData || !rawData.graph_data) {
         console.error("Invalid data format: Missing graph_data structure");
@@ -69,169 +46,131 @@ function processNeoDBAData(rawData) {
     
     // Filter movie nodes from the original data
     const movieNodes = rawData.graph_data.nodes.filter(node => {
-        // Log each node for inspection
-        console.log("Checking node:", {
-            id: node.id,
-            type: node.type,
-            category: node.category,
-            dataType: node.data?.type,
-            dataCategory: node.data?.category
-        });
-        
-        // Include only movie type nodes
-        // Check both type and category fields, and also check the data object
         return node.type === 'movie' || 
                node.category === 'movie' || 
                (node.type === 'media' && node.category === 'movie') ||
                (node.data && (node.data.type === 'movie' || node.data.category === 'movie'));
     });
 
-    console.log("Found movie nodes:", movieNodes.length);
+    console.log(`Found ${movieNodes.length} movie nodes`);
     
     // Determine the shelf for each movie node
     const nodeShelfMap = new Map();
     
     if (rawData.graph_data && rawData.graph_data.links) {
         rawData.graph_data.links.forEach(link => {
-            // Check if this is a link between a shelf and a movie
             if (link.source === 'shelf_wishlist' || 
                 link.source === 'shelf_progress' || 
                 link.source === 'shelf_complete' || 
                 link.source === 'shelf_dropped') {
-                
-                // Store shelf type for this target node
                 const targetId = typeof link.target === 'object' ? link.target.id : link.target;
                 const shelfType = link.source.replace('shelf_', '');
                 nodeShelfMap.set(targetId, shelfType);
             }
-            // Also check the reverse direction
             else if (link.target === 'shelf_wishlist' || 
                      link.target === 'shelf_progress' || 
                      link.target === 'shelf_complete' || 
                      link.target === 'shelf_dropped') {
-                
-                // Store shelf type for this source node
                 const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
                 const shelfType = link.target.replace('shelf_', '');
                 nodeShelfMap.set(sourceId, shelfType);
             }
         });
     }
-    
-    // Add movie nodes with shelf status to processed data
+
+    // Process each movie node
     movieNodes.forEach(node => {
         const nodeId = node.id;
         const shelfStatus = nodeShelfMap.get(nodeId) || 'unknown';
         const nodeData = node.data || {};
         
-        // Create a simplified node
+        // Create movie node
         const processedNode = {
             id: nodeId,
             name: node.name || nodeData.name || "Unnamed Movie",
             type: 'movie',
             shelf: shelfStatus,
-            data: nodeData
+            data: {
+                ...nodeData,
+                rating: nodeData.rating || node.rating,
+                url: nodeData.url || node.url
+            }
         };
         
-        // Add rating if available
-        if (nodeData.rating) {
-            processedNode.rating = typeof nodeData.rating === 'number' ? 
-                nodeData.rating : parseFloat(nodeData.rating);
-        } else if (node.rating) {
-            processedNode.rating = typeof node.rating === 'number' ? 
-                node.rating : parseFloat(node.rating);
-        }
-        
-        // Add URL if available
-        if (nodeData.url) {
-            processedNode.url = nodeData.url;
-        } else if (node.url) {
-            processedNode.url = node.url;
-        }
-        
-        // Add to processed data if not already added
+        // Add movie node
         if (!nodeIds.has(nodeId)) {
             processedData.nodes.push(processedNode);
             nodeIds.add(nodeId);
         }
-        
-        // Extract creators for this movie
-        if (nodeData.director) {
-            const directors = Array.isArray(nodeData.director) ? nodeData.director : [nodeData.director];
-            directors.forEach(directorName => {
-                const directorId = `director_${createIdFromName(directorName)}`;
-                if (!creatorIds.has(directorId)) {
-                    processedData.nodes.push({
-                        id: directorId,
-                        name: directorName,
+
+        // Process creators
+        const creators = {
+            director: nodeData.director || [],
+            actor: nodeData.actor || [],
+            playwright: nodeData.playwright || []
+        };
+
+        // Log creator data for this movie
+        console.log(`\nProcessing creators for movie: ${processedNode.name}`);
+        console.log('Creator data:', creators);
+
+        // Process each type of creator
+        Object.entries(creators).forEach(([role, names]) => {
+            if (!Array.isArray(names)) {
+                names = [names];
+            }
+
+            names.filter(name => name).forEach(name => {
+                const creatorId = `${role}_${createIdFromName(name)}`;
+                console.log(`Processing ${role}: ${name} (ID: ${creatorId})`);
+
+                // Add creator node if not exists
+                if (!creatorIds.has(creatorId)) {
+                    const creatorNode = {
+                        id: creatorId,
+                        name: name,
                         type: 'creator',
-                        role: 'director'
-                    });
-                    creatorIds.add(directorId);
+                        role: role
+                    };
+                    processedData.nodes.push(creatorNode);
+                    creatorIds.add(creatorId);
+                    console.log(`Added new creator node: ${name} (${role})`);
                 }
+
+                // Add link
+                const linkType = role === 'director' ? 'directed' :
+                               role === 'actor' ? 'acted_in' : 'wrote';
+                
                 processedData.links.push({
-                    source: directorId,
+                    source: creatorId,
                     target: nodeId,
-                    type: 'directed'
+                    type: linkType
                 });
+                console.log(`Added link: ${creatorId} -[${linkType}]-> ${nodeId}`);
             });
-        }
-        
-        if (nodeData.actor) {
-            const actors = Array.isArray(nodeData.actor) ? nodeData.actor : [nodeData.actor];
-            actors.forEach(actorName => {
-                const actorId = `actor_${createIdFromName(actorName)}`;
-                if (!creatorIds.has(actorId)) {
-                    processedData.nodes.push({
-                        id: actorId,
-                        name: actorName,
-                        type: 'creator',
-                        role: 'actor'
-                    });
-                    creatorIds.add(actorId);
-                }
-                processedData.links.push({
-                    source: actorId,
-                    target: nodeId,
-                    type: 'acted_in'
-                });
-            });
-        }
-        
-        if (nodeData.playwright) {
-            const playwrights = Array.isArray(nodeData.playwright) ? nodeData.playwright : [nodeData.playwright];
-            playwrights.forEach(playwrightName => {
-                const playwrightId = `playwright_${createIdFromName(playwrightName)}`;
-                if (!creatorIds.has(playwrightId)) {
-                    processedData.nodes.push({
-                        id: playwrightId,
-                        name: playwrightName,
-                        type: 'creator',
-                        role: 'playwright'
-                    });
-                    creatorIds.add(playwrightId);
-                }
-                processedData.links.push({
-                    source: playwrightId,
-                    target: nodeId,
-                    type: 'wrote'
-                });
-            });
-        }
+        });
     });
 
-    console.log("Processed nodes:", processedData.nodes.length);
-    console.log("Processed links:", processedData.links.length);
-    
-    // Export the processed data to CSV format
-    exportToCSV(processedData);
-    
+    // Log final statistics
+    console.log("\n=== FINAL STATISTICS ===");
+    console.log("Total movies:", processedData.nodes.filter(n => n.type === 'movie').length);
+    console.log("Total creators:", processedData.nodes.filter(n => n.type === 'creator').length);
+    console.log("Total links:", processedData.links.length);
+    console.log("\nCreator breakdown:", 
+        processedData.nodes
+            .filter(n => n.type === 'creator')
+            .reduce((acc, n) => {
+                acc[n.role] = (acc[n.role] || 0) + 1;
+                return acc;
+            }, {})
+    );
+
     return processedData;
 }
 
 // Helper function to create a consistent ID from a name
 function createIdFromName(name) {
-    if (!name) return Math.random().toString(36).substring(2, 10);
+    if (!name || typeof name !== 'string') return Math.random().toString(36).substring(2, 10);
     return name.toLowerCase()
         .replace(/[^a-z0-9]/g, '_')
         .replace(/_+/g, '_')

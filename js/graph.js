@@ -17,6 +17,7 @@ const graphVisualization = (function() {
 
     // Get node color based on type and shelf status
     function getNodeColor(d) {
+        console.log('Getting color for node:', d); // Debug log
         if (d.type === 'movie') {
             return colorUtils.calculateMovieColor(d, nodes, links);
         } else if (d.type === 'creator') {
@@ -42,16 +43,9 @@ const graphVisualization = (function() {
     // Get node size based on type and importance
     function getNodeSize(d) {
         if (d.type === 'creator') {
-            if (d.role === 'director') {
-                return 5; // Directors slightly larger
-            }
-            return 4; // Actors
+            return d.role === 'director' ? 6 : 4;
         }
-        // Movies sized by rating if available
-        if (d.type === 'movie' && d.rating) {
-            return 3 + (d.rating / 10) * 3; // Size 3-6 based on rating
-        }
-        return 4; // Default size
+        return 3; // Movies
     }
 
     // Drag behavior functions
@@ -185,6 +179,8 @@ const graphVisualization = (function() {
 
     // Initialize the visualization
     function init(containerId, graphData) {
+        console.log('Initializing with data:', graphData); // Debug log
+        
         // Set dimensions based on container
         const container = document.getElementById(containerId);
         width = container.clientWidth;
@@ -195,6 +191,8 @@ const graphVisualization = (function() {
         nodes = graphData.nodes || [];
         links = graphData.links || [];
         
+        console.log('Nodes:', nodes.length, 'Links:', links.length); // Debug log
+        
         // Create SVG with centered viewBox
         svg = d3.select(`#${containerId}`)
             .append('svg')
@@ -202,11 +200,11 @@ const graphVisualization = (function() {
             .attr('height', '100%')
             .attr('viewBox', [-width/2, -height/2, width, height])
             .style('background', '#ffffff')
-            .style('overflow', 'visible'); // Allow content to overflow
+            .style('overflow', 'visible');
         
-        // Create zoom behavior with extended range
+        // Create zoom behavior
         zoom = d3.zoom()
-            .scaleExtent([0.1, 10]) // Allow more zoom out/in
+            .scaleExtent([0.1, 10])
             .on('zoom', (event) => {
                 g.attr('transform', event.transform);
             });
@@ -216,146 +214,84 @@ const graphVisualization = (function() {
         // Create main group for transformation
         g = svg.append('g');
         
-        // Create tooltip
-        const tooltip = d3.select(`#${containerId}`)
-            .append('div')
-            .attr('class', 'node-tooltip')
-            .style('position', 'absolute')
-            .style('visibility', 'hidden')
-            .style('background-color', 'white')
-            .style('border', '1px solid #ddd')
-            .style('border-radius', '4px')
-            .style('padding', '6px 10px')
-            .style('font-family', 'sans-serif')
-            .style('font-size', '12px')
-            .style('box-shadow', '0 2px 4px rgba(0,0,0,0.1)')
-            .style('pointer-events', 'none')
-            .style('z-index', '1000')
-            .style('max-width', '250px');
-        
-        // Create links with arrowheads for directional relationships
-        const linkGroup = g.append('g');
-        
-        // Add directional marker definitions
-        svg.append('defs').selectAll('marker')
-            .data(['director', 'actor', 'worked_with', 'co_actor'])
-            .enter().append('marker')
-            .attr('id', d => `arrow-${d}`)
-            .attr('viewBox', '0 -5 10 10')
-            .attr('refX', 15)
-            .attr('refY', 0)
-            .attr('markerWidth', 6)
-            .attr('markerHeight', 6)
-            .attr('orient', 'auto')
-            .append('path')
-            .attr('fill', '#999')
-            .attr('d', 'M0,-5L10,0L0,5');
-        
-        // Create force simulation with movie-specific forces
-        simulation = d3.forceSimulation(nodes)
-            // Links with variable distances
-            .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
-                const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
-                const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
-                
-                if (!source || !target) return 200;
-                
-                // Adjust distances based on node types
-                if (source.type === 'creator' || target.type === 'creator') {
-                    return 150; // Creator to movie distance
-                }
-                return 200; // Movie to movie distance
-            }).strength(0.5)) // Reduced link strength for more flexibility
-            // Strong but not excessive repulsive force
-            .force('charge', d3.forceManyBody()
-                .strength(d => {
-                    if (d.type === 'creator') return -300;
-                    return -500; // Movies
-                })
-                .distanceMax(1000)
-                .theta(0.9)
-            )
-            // Very weak center gravity
-            .force('x', d3.forceX().strength(0.05))
-            .force('y', d3.forceY().strength(0.05))
-            // Collision prevention
-            .force('collision', d3.forceCollide().radius(d => {
-                if (d.type === 'creator') return getNodeSize(d) * 2;
-                return getNodeSize(d) * 3;
-            }).strength(0.5))
-            // Simulation settings
-            .alpha(0.5)
-            .alphaDecay(0.05)
-            .alphaMin(0.001)
-            .velocityDecay(0.6);
-
         // Create links
+        const linkGroup = g.append('g')
+            .attr('class', 'links');
+        
         link = linkGroup.selectAll('line')
             .data(links)
             .enter().append('line')
             .attr('stroke', colorUtils.PALETTE.fujiGray)
             .attr('stroke-opacity', 0.3)
-            .attr('stroke-width', d => {
-                if (d.type === 'directed' || d.type === 'acted_in') {
-                    return 1;
-                }
-                return 0.5;
-            });
+            .attr('stroke-width', 0.5);
         
         // Create nodes
-        node = g.append('g')
-            .selectAll('circle')
+        const nodeGroup = g.append('g')
+            .attr('class', 'nodes');
+        
+        node = nodeGroup.selectAll('circle')
             .data(nodes)
             .enter().append('circle')
             .attr('r', getNodeSize)
             .attr('fill', getNodeColor)
-            .attr('opacity', getNodeOpacity)
             .attr('stroke', '#fff')
-            .attr('stroke-width', 1)
+            .attr('stroke-width', 0.5)
             .call(d3.drag()
                 .on('start', dragstarted)
                 .on('drag', dragged)
                 .on('end', dragended));
         
-        // Create labels with better visibility
-        nodeLabels = g.append('g')
-            .selectAll('text')
+        // Create labels
+        const labelGroup = g.append('g')
+            .attr('class', 'labels');
+        
+        nodeLabels = labelGroup.selectAll('text')
             .data(nodes)
             .enter().append('text')
             .attr('dx', 8)
             .attr('dy', 3)
             .text(d => d.name)
             .attr('font-family', 'sans-serif')
-            .attr('font-size', d => {
-                if (d.type === 'creator') return '10px';
-                return '8px';
-            })
+            .attr('font-size', d => d.type === 'creator' ? '10px' : '8px')
             .attr('fill', '#333')
             .style('pointer-events', 'none')
-            .style('user-select', 'none')
-            .style('opacity', d => {
-                if (d.type === 'creator') return 0.9;
-                if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                return 0.8;
+            .style('user-select', 'none');
+        
+        // Create force simulation
+        simulation = d3.forceSimulation(nodes)
+            .force('link', d3.forceLink(links)
+                .id(d => d.id)
+                .distance(150)
+                .strength(0.5))
+            .force('charge', d3.forceManyBody()
+                .strength(d => d.type === 'creator' ? -300 : -100)
+                .distanceMax(500))
+            .force('x', d3.forceX().strength(0.1))
+            .force('y', d3.forceY().strength(0.1))
+            .force('collision', d3.forceCollide()
+                .radius(d => getNodeSize(d) * 2)
+                .strength(0.5))
+            .alpha(0.3)
+            .alphaDecay(0.05)
+            .velocityDecay(0.6)
+            .on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+
+                node
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+
+                nodeLabels
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y);
             });
         
-        // Update simulation on each tick
-        simulation.on('tick', () => {
-            // Remove bounds checking to allow unlimited canvas
-            link
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
-
-            node
-                .attr('cx', d => d.x)
-                .attr('cy', d => d.y);
-
-            nodeLabels
-                .attr('x', d => d.x)
-                .attr('y', d => d.y);
-        });
+        // Log final node and link counts
+        console.log('Final counts - Nodes:', node.size(), 'Links:', link.size());
 
         // Add hover and click behaviors
         setupNodeInteractions();
