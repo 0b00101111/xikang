@@ -1,6 +1,26 @@
 // Movie-only NeoDB Data Adapter
 // This script converts the data from NeoDB API to show only movie items
 
+function exportToCSV(processedData) {
+    // Create CSV content for nodes
+    let nodesCSV = 'id,name,type,shelf,rating,url\n';
+    processedData.nodes.forEach(node => {
+        nodesCSV += `${node.id},"${node.name}",${node.type},${node.shelf},${node.rating || ''},${node.url || ''}\n`;
+    });
+    
+    // Create CSV content for links
+    let linksCSV = 'source,target,type\n';
+    processedData.links.forEach(link => {
+        linksCSV += `${link.source},${link.target},${link.type}\n`;
+    });
+    
+    // Log the CSVs for inspection
+    console.log("=== NODES CSV ===");
+    console.log(nodesCSV);
+    console.log("\n=== LINKS CSV ===");
+    console.log(linksCSV);
+}
+
 function processNeoDBAData(rawData) {
     console.log("Processing NeoDB data for movie visualization");
     
@@ -20,8 +40,24 @@ function processNeoDBAData(rawData) {
     const nodeIds = new Set();
     const creatorIds = new Set();
     
+    // Log raw data structure
+    console.log("Raw data structure:", {
+        totalNodes: rawData.graph_data.nodes.length,
+        totalLinks: rawData.graph_data.links.length,
+        sampleNode: rawData.graph_data.nodes[0]
+    });
+    
     // Filter movie nodes from the original data
     const movieNodes = rawData.graph_data.nodes.filter(node => {
+        // Log each node for inspection
+        console.log("Checking node:", {
+            id: node.id,
+            type: node.type,
+            category: node.category,
+            dataType: node.data?.type,
+            dataCategory: node.data?.category
+        });
+        
         // Include only movie type nodes
         // Check both type and category fields, and also check the data object
         return node.type === 'movie' || 
@@ -105,6 +141,9 @@ function processNeoDBAData(rawData) {
 
     console.log("Processed nodes:", processedData.nodes.length);
     console.log("Processed links:", processedData.links.length);
+    
+    // Export the processed data to CSV format
+    exportToCSV(processedData);
     
     // Helper function to extract creators from a movie node
     function extractCreators(node, processedData, nodeIds, creatorIds) {
