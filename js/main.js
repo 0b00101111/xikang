@@ -72,29 +72,44 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 return response.json();
             })
-            .then(data => {
-                graphData = data;
+            .then(rawData => {
+                console.log("Raw data loaded:", rawData);
                 
-                // Update last updated date if available
-                if (data.metadata && data.metadata.lastUpdated) {
-                    const lastUpdated = new Date(data.metadata.lastUpdated);
-                    lastUpdatedSpan.textContent = lastUpdated.toLocaleDateString() + ' ' + lastUpdated.toLocaleTimeString();
-                } else {
-                    lastUpdatedSpan.textContent = 'Unknown';
+                // Process the data using the adapter
+                try {
+                    graphData = processNeoDBAData(rawData);
+                    
+                    if (!graphData) {
+                        throw new Error('Data processing failed');
+                    }
+                    
+                    console.log("Processed data:", graphData);
+                    
+                    // Update last updated date if available
+                    if (graphData.metadata && graphData.metadata.lastUpdated) {
+                        const lastUpdated = new Date(graphData.metadata.lastUpdated);
+                        lastUpdatedSpan.textContent = lastUpdated.toLocaleDateString() + ' ' + lastUpdated.toLocaleTimeString();
+                    } else {
+                        lastUpdatedSpan.textContent = 'Unknown';
+                    }
+                    
+                    // Initialize graph visualization
+                    initializeVisualization(graphData);
+                    
+                    // Create dynamic legend
+                    createLegend(graphData);
+                    
+                    showLoading(false);
+                } catch (processingError) {
+                    console.error('Error processing data:', processingError);
+                    showLoading(false);
+                    alert('Failed to process data: ' + processingError.message);
                 }
-                
-                // Initialize graph visualization
-                initializeVisualization(data);
-                
-                // Create dynamic legend
-                createLegend(data);
-                
-                showLoading(false);
             })
             .catch(error => {
                 console.error('Error loading data:', error);
                 showLoading(false);
-                alert('Failed to load data. Please try again later.');
+                alert('Failed to load data: ' + error.message);
             });
     }
     
@@ -185,6 +200,8 @@ document.addEventListener('DOMContentLoaded', function() {
             html = createGenreDetailsHTML(node);
         } else if (node.type === 'tag') {
             html = createTagDetailsHTML(node);
+        } else if (node.type === 'user') {
+            html = createUserDetailsHTML(node);
         }
         
         infoContent.innerHTML = html;
@@ -196,6 +213,64 @@ document.addEventListener('DOMContentLoaded', function() {
                 window.open(node.url, '_blank');
             });
         }
+    }
+    
+    // Create HTML for user details (new function)
+    function createUserDetailsHTML(node) {
+        let html = `
+            <div class="media-details">
+                <div class="media-title">${node.name}</div>
+                <div class="media-type">NeoDB User</div>
+                <div class="media-metadata">
+        `;
+        
+        // Add metadata if available
+        if (graphData && graphData.metadata) {
+            if (graphData.metadata.username) {
+                html += `
+                    <div class="meta-item">
+                        <div class="meta-label">Username:</div>
+                        <div>${graphData.metadata.username}</div>
+                    </div>
+                `;
+            }
+            
+            if (graphData.metadata.handle) {
+                html += `
+                    <div class="meta-item">
+                        <div class="meta-label">Handle:</div>
+                        <div>${graphData.metadata.handle}</div>
+                    </div>
+                `;
+            }
+            
+            // Count items by category
+            if (graphData.nodes) {
+                const mediaTypes = {};
+                graphData.nodes.forEach(n => {
+                    if (n.type === 'media' && n.category) {
+                        mediaTypes[n.category] = (mediaTypes[n.category] || 0) + 1;
+                    }
+                });
+                
+                // Add media type counts
+                for (const [type, count] of Object.entries(mediaTypes)) {
+                    html += `
+                        <div class="meta-item">
+                            <div class="meta-label">${capitalizeFirstLetter(type)}s:</div>
+                            <div>${count}</div>
+                        </div>
+                    `;
+                }
+            }
+        }
+        
+        html += `
+                </div>
+            </div>
+        `;
+        
+        return html;
     }
     
     // Create HTML for media details
@@ -373,6 +448,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Helper function to capitalize first letter
     function capitalizeFirstLetter(string) {
+        if (!string) return '';
         return string.charAt(0).toUpperCase() + string.slice(1);
     }
     
@@ -383,7 +459,8 @@ document.addEventListener('DOMContentLoaded', function() {
             book: 'var(--book-color)',
             tvseries: 'var(--tvseries-color)',
             music: 'var(--music-color)',
-            podcast: 'var(--podcast-color)'
+            podcast: 'var(--podcast-color)',
+            game: 'var(--game-color)' // Added game color
         };
         
         return colorMap[type] || 'var(--primary-color)';
