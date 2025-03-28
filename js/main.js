@@ -215,222 +215,136 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Create HTML for user details (new function)
-    function createUserDetailsHTML(node) {
-        let html = `
-            <div class="media-details">
-                <div class="media-title">${node.name}</div>
-                <div class="media-type">NeoDB User</div>
-                <div class="media-metadata">
-        `;
-        
-        // Add metadata if available
-        if (graphData && graphData.metadata) {
-            if (graphData.metadata.username) {
-                html += `
-                    <div class="meta-item">
-                        <div class="meta-label">Username:</div>
-                        <div>${graphData.metadata.username}</div>
-                    </div>
-                `;
-            }
-            
-            if (graphData.metadata.handle) {
-                html += `
-                    <div class="meta-item">
-                        <div class="meta-label">Handle:</div>
-                        <div>${graphData.metadata.handle}</div>
-                    </div>
-                `;
-            }
-            
-            // Count items by category
-            if (graphData.nodes) {
-                const mediaTypes = {};
-                graphData.nodes.forEach(n => {
-                    if (n.type === 'media' && n.category) {
-                        mediaTypes[n.category] = (mediaTypes[n.category] || 0) + 1;
-                    }
-                });
-                
-                // Add media type counts
-                for (const [type, count] of Object.entries(mediaTypes)) {
-                    html += `
-                        <div class="meta-item">
-                            <div class="meta-label">${capitalizeFirstLetter(type)}s:</div>
-                            <div>${count}</div>
-                        </div>
-                    `;
-                }
-            }
-        }
-        
-        html += `
-                </div>
-            </div>
-        `;
-        
-        return html;
-    }
-    
-    // Create HTML for media details
+    // Create HTML for media (movie) details
     function createMediaDetailsHTML(node) {
-        const category = node.category || 'unknown';
-        
         let html = `
             <div class="media-details">
-                <div class="media-title">${node.name}</div>
-                <div class="media-type ${category}">${capitalizeFirstLetter(category)}</div>
-                <div class="media-metadata">
-        `;
-        
-        // Add year if available
-        if (node.year) {
-            html += `
-                <div class="meta-item">
-                    <div class="meta-label">Year:</div>
-                    <div>${node.year}</div>
+                <h3>${node.name}</h3>
+                <div class="details-section">
+                    <p><strong>Status:</strong> ${capitalizeFirstLetter(node.shelf || 'Unknown')}</p>
+                    ${node.rating ? `<p><strong>Rating:</strong> ${node.rating}/10</p>` : ''}
+                    ${node.url ? `<p><strong>URL:</strong> <a href="${node.url}" target="_blank">View on NeoDB</a></p>` : ''}
                 </div>
-            `;
-        }
-        
-        // Add rating if available
-        if (node.rating) {
-            html += `
-                <div class="meta-item">
-                    <div class="meta-label">Rating:</div>
-                    <div>${node.rating}/10</div>
-                </div>
-            `;
-        }
-        
-        // Add date logged if available
-        if (node.date_logged) {
-            const dateLogged = new Date(node.date_logged);
-            html += `
-                <div class="meta-item">
-                    <div class="meta-label">Logged:</div>
-                    <div>${dateLogged.toLocaleDateString()}</div>
-                </div>
-            `;
-        }
-        
-        // Add media-specific info
-        if (category === 'book' && node.pages) {
-            html += `
-                <div class="meta-item">
-                    <div class="meta-label">Pages:</div>
-                    <div>${node.pages}</div>
-                </div>
-            `;
-        } else if ((category === 'movie' || category === 'tvseries') && node.duration) {
-            html += `
-                <div class="meta-item">
-                    <div class="meta-label">Duration:</div>
-                    <div>${node.duration}</div>
-                </div>
-            `;
-        }
-        
-        html += `
-                </div>
-        `;
-        
-        // Add action buttons
-        if (node.url) {
-            html += `
-                <div class="media-actions">
-                    <button class="action-btn">View on NeoDB</button>
-                </div>
-            `;
-        }
-        
-        html += `</div>`;
-        
-        return html;
-    }
-    
-    // Create HTML for creator details
-    function createCreatorDetailsHTML(node) {
-        const category = node.category || 'creator';
-        
-        let html = `
-            <div class="media-details">
-                <div class="media-title">${node.name}</div>
-                <div class="media-type">${capitalizeFirstLetter(category)}</div>
-                <div class="media-metadata">
-        `;
-        
-        // Add number of works if available
-        if (node.media_count) {
-            html += `
-                <div class="meta-item">
-                    <div class="meta-label">Works:</div>
-                    <div>${node.media_count}</div>
-                </div>
-            `;
-        }
-        
-        html += `
+                
+                <div class="details-section">
+                    <h4>Connected Creators</h4>
+                    <div class="connected-creators">
+                        ${getConnectedCreatorsHTML(node)}
+                    </div>
                 </div>
             </div>
         `;
-        
+        return html;
+    }
+    
+    // Create HTML for creator (director/actor) details
+    function createCreatorDetailsHTML(node) {
+        let html = `
+            <div class="creator-details">
+                <h3>${node.name}</h3>
+                <div class="details-section">
+                    <p><strong>Role:</strong> ${capitalizeFirstLetter(node.role || 'Creator')}</p>
+                </div>
+                
+                <div class="details-section">
+                    <h4>Connected Movies</h4>
+                    <div class="connected-movies">
+                        ${getConnectedMoviesHTML(node)}
+                    </div>
+                </div>
+            </div>
+        `;
         return html;
     }
     
     // Create HTML for genre details
     function createGenreDetailsHTML(node) {
         let html = `
-            <div class="media-details">
-                <div class="media-title">${node.name}</div>
-                <div class="media-type">Genre</div>
-                <div class="media-metadata">
-        `;
-        
-        // Add number of works if available
-        if (node.media_count) {
-            html += `
-                <div class="meta-item">
-                    <div class="meta-label">Media:</div>
-                    <div>${node.media_count}</div>
-                </div>
-            `;
-        }
-        
-        html += `
+            <div class="genre-details">
+                <h3>${node.name}</h3>
+                <div class="details-section">
+                    <h4>Movies in this Genre</h4>
+                    <div class="genre-movies">
+                        ${getConnectedMoviesHTML(node)}
+                    </div>
                 </div>
             </div>
         `;
-        
         return html;
     }
     
     // Create HTML for tag details
     function createTagDetailsHTML(node) {
         let html = `
-            <div class="media-details">
-                <div class="media-title">${node.name}</div>
-                <div class="media-type">Tag</div>
-                <div class="media-metadata">
-        `;
-        
-        // Add number of works if available
-        if (node.media_count) {
-            html += `
-                <div class="meta-item">
-                    <div class="meta-label">Media:</div>
-                    <div>${node.media_count}</div>
-                </div>
-            `;
-        }
-        
-        html += `
+            <div class="tag-details">
+                <h3>${node.name}</h3>
+                <div class="details-section">
+                    <h4>Tagged Items</h4>
+                    <div class="tagged-items">
+                        ${getConnectedMoviesHTML(node)}
+                    </div>
                 </div>
             </div>
         `;
-        
         return html;
+    }
+    
+    // Create HTML for user details
+    function createUserDetailsHTML(node) {
+        let html = `
+            <div class="user-details">
+                <h3>${node.name}</h3>
+                <div class="details-section">
+                    <h4>Collection Statistics</h4>
+                    <p><strong>Total Items:</strong> ${node.totalItems || 0}</p>
+                    <p><strong>Movies:</strong> ${node.movieCount || 0}</p>
+                    <p><strong>In Progress:</strong> ${node.inProgressCount || 0}</p>
+                    <p><strong>Completed:</strong> ${node.completedCount || 0}</p>
+                </div>
+            </div>
+        `;
+        return html;
+    }
+    
+    // Helper function to get HTML for connected creators
+    function getConnectedCreatorsHTML(node) {
+        const connectedCreators = graphData.links
+            .filter(link => 
+                (typeof link.target === 'object' ? link.target.id === node.id : link.target === node.id) &&
+                graphData.nodes.find(n => n.id === (typeof link.source === 'object' ? link.source.id : link.source) && n.type === 'creator')
+            )
+            .map(link => graphData.nodes.find(n => n.id === (typeof link.source === 'object' ? link.source.id : link.source)))
+            .filter(Boolean);
+
+        return connectedCreators.map(creator => `
+            <div class="connected-item">
+                <span class="creator-role">${capitalizeFirstLetter(creator.role)}:</span>
+                <span class="creator-name">${creator.name}</span>
+            </div>
+        `).join('');
+    }
+    
+    // Helper function to get HTML for connected movies
+    function getConnectedMoviesHTML(node) {
+        const connectedMovies = graphData.links
+            .filter(link => 
+                (typeof link.source === 'object' ? link.source.id === node.id : link.source === node.id) &&
+                graphData.nodes.find(n => n.id === (typeof link.target === 'object' ? link.target.id : link.target) && n.type === 'movie')
+            )
+            .map(link => graphData.nodes.find(n => n.id === (typeof link.target === 'object' ? link.target.id : link.target)))
+            .filter(Boolean);
+
+        return connectedMovies.map(movie => `
+            <div class="connected-item">
+                <span class="movie-name">${movie.name}</span>
+                ${movie.rating ? `<span class="movie-rating">(${movie.rating}/10)</span>` : ''}
+            </div>
+        `).join('');
+    }
+    
+    // Helper function to capitalize first letter
+    function capitalizeFirstLetter(string) {
+        return string.charAt(0).toUpperCase() + string.slice(1);
     }
     
     // Function to perform search
@@ -444,12 +358,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Helper function to show/hide loading indicator
     function showLoading(show) {
         loadingElement.style.display = show ? 'flex' : 'none';
-    }
-    
-    // Helper function to capitalize first letter
-    function capitalizeFirstLetter(string) {
-        if (!string) return '';
-        return string.charAt(0).toUpperCase() + string.slice(1);
     }
     
     // Helper function to get color for media type
