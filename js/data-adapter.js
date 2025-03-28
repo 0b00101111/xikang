@@ -23,10 +23,14 @@ function processNeoDBAData(rawData) {
     // Filter movie nodes from the original data
     const movieNodes = rawData.graph_data.nodes.filter(node => {
         // Include only movie type nodes
+        // Check both type and category fields, and also check the data object
         return node.type === 'movie' || 
                node.category === 'movie' || 
-               (node.type === 'media' && node.category === 'movie');
+               (node.type === 'media' && node.category === 'movie') ||
+               (node.data && (node.data.type === 'movie' || node.data.category === 'movie'));
     });
+
+    console.log("Found movie nodes:", movieNodes.length);
     
     // Determine the shelf for each movie node
     const nodeShelfMap = new Map();
@@ -62,28 +66,29 @@ function processNeoDBAData(rawData) {
     movieNodes.forEach(node => {
         const nodeId = node.id;
         const shelfStatus = nodeShelfMap.get(nodeId) || 'unknown';
+        const nodeData = node.data || {};
         
         // Create a simplified node
         const processedNode = {
             id: nodeId,
-            name: node.name || "Unnamed Movie",
+            name: node.name || nodeData.name || "Unnamed Movie",
             type: 'movie',
             shelf: shelfStatus,
-            data: node.data || {}
+            data: nodeData
         };
         
         // Add rating if available
-        if (node.data && node.data.rating) {
-            processedNode.rating = typeof node.data.rating === 'number' ? 
-                node.data.rating : parseFloat(node.data.rating);
+        if (nodeData.rating) {
+            processedNode.rating = typeof nodeData.rating === 'number' ? 
+                nodeData.rating : parseFloat(nodeData.rating);
         } else if (node.rating) {
             processedNode.rating = typeof node.rating === 'number' ? 
                 node.rating : parseFloat(node.rating);
         }
         
         // Add URL if available
-        if (node.data && node.data.url) {
-            processedNode.url = node.data.url;
+        if (nodeData.url) {
+            processedNode.url = nodeData.url;
         } else if (node.url) {
             processedNode.url = node.url;
         }
@@ -97,6 +102,9 @@ function processNeoDBAData(rawData) {
             extractCreators(node, processedData, nodeIds, creatorIds);
         }
     });
+
+    console.log("Processed nodes:", processedData.nodes.length);
+    console.log("Processed links:", processedData.links.length);
     
     // Helper function to extract creators from a movie node
     function extractCreators(node, processedData, nodeIds, creatorIds) {
@@ -105,37 +113,50 @@ function processNeoDBAData(rawData) {
         // Extract creators for movies
         let creators = [];
         
-        // Look for directors
+        // Look for directors in various places
+        const directors = [];
         if (nodeData.directors) {
-            let directors = Array.isArray(nodeData.directors) ? nodeData.directors : [nodeData.directors];
-            directors.forEach(director => {
-                const directorName = typeof director === 'string' ? director : (director.name || 'Unknown Director');
-                const directorId = `director_${createIdFromName(directorName)}`;
-                
-                creators.push({
-                    id: directorId,
-                    name: directorName,
-                    type: 'creator',
-                    role: 'director'
-                });
-            });
+            directors.push(...(Array.isArray(nodeData.directors) ? nodeData.directors : [nodeData.directors]));
+        }
+        if (nodeData.director) {
+            directors.push(...(Array.isArray(nodeData.director) ? nodeData.director : [nodeData.director]));
+        }
+        if (nodeData.credits && nodeData.credits.director) {
+            directors.push(...(Array.isArray(nodeData.credits.director) ? nodeData.credits.director : [nodeData.credits.director]));
         }
         
-        // Look for cast (limit to main cast - first 5)
-        if (nodeData.cast) {
-            let cast = Array.isArray(nodeData.cast) ? nodeData.cast : [nodeData.cast];
-            cast.slice(0, 5).forEach(actor => {
-                const actorName = typeof actor === 'string' ? actor : (actor.name || 'Unknown Actor');
-                const actorId = `actor_${createIdFromName(actorName)}`;
-                
-                creators.push({
-                    id: actorId,
-                    name: actorName,
-                    type: 'creator',
-                    role: 'actor'
-                });
+        directors.forEach(director => {
+            const directorName = typeof director === 'string' ? director : (director.name || 'Unknown Director');
+            const directorId = `director_${createIdFromName(directorName)}`;
+            
+            creators.push({
+                id: directorId,
+                name: directorName,
+                type: 'creator',
+                role: 'director'
             });
+        });
+        
+        // Look for cast in various places (limit to main cast - first 5)
+        const cast = [];
+        if (nodeData.cast) {
+            cast.push(...(Array.isArray(nodeData.cast) ? nodeData.cast : [nodeData.cast]));
         }
+        if (nodeData.credits && nodeData.credits.cast) {
+            cast.push(...(Array.isArray(nodeData.credits.cast) ? nodeData.credits.cast : [nodeData.credits.cast]));
+        }
+        
+        cast.slice(0, 5).forEach(actor => {
+            const actorName = typeof actor === 'string' ? actor : (actor.name || 'Unknown Actor');
+            const actorId = `actor_${createIdFromName(actorName)}`;
+            
+            creators.push({
+                id: actorId,
+                name: actorName,
+                type: 'creator',
+                role: 'actor'
+            });
+        });
         
         // Add creator nodes and links
         creators.forEach(creator => {
@@ -201,7 +222,7 @@ function processNeoDBAData(rawData) {
             .filter(link => link.source === actor1.id)
             .map(link => link.target);
         
-        // For each actor's movie, find other actors in the same movie
+        // For each movie, find other actors in the same movie
         actor1Movies.forEach(movieId => {
             const coActors = processedData.links
                 .filter(link => link.target === movieId && 
