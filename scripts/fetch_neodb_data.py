@@ -11,10 +11,10 @@ def fetch_paginated_data(url, headers, params=None):
     
     all_items = []
     page = 1
-    total_count = None
+    items_per_page = 20  # NeoDB seems to use 20 as default page size
     
     while True:
-        current_params = {**params, 'page': page, 'per_page': 100}
+        current_params = {**params, 'page': page}  # Don't override the default per_page
         print(f"Fetching {url} with params: {current_params}")
         response = requests.get(url, headers=headers, params=current_params)
         
@@ -23,16 +23,6 @@ def fetch_paginated_data(url, headers, params=None):
             break
             
         data = response.json()
-        
-        # Debug: Print pagination info
-        pagination = data.get('pagination', {})
-        print(f"Pagination info: {pagination}")
-        
-        # Get total count from the first response
-        if total_count is None:
-            total_count = pagination.get('total', 0)
-            print(f"Total items to fetch: {total_count}")
-        
         items = data.get('data', [])
         
         if not items:
@@ -42,14 +32,18 @@ def fetch_paginated_data(url, headers, params=None):
         all_items.extend(items)
         current_count = len(all_items)
         
-        print(f"Fetched page {page} ({len(items)} items, {current_count}/{total_count} total)")
+        # If we got less than items_per_page, we're on the last page
+        has_more = len(items) >= items_per_page
+        print(f"Fetched page {page} ({len(items)} items, total so far: {current_count})")
         
-        if current_count >= total_count or len(items) == 0:
+        if not has_more:
+            print("Last page reached (got fewer items than page size)")
             break
             
         page += 1
         time.sleep(0.5)  # Rate limiting
     
+    print(f"Finished fetching all pages. Total items: {len(all_items)}")
     return all_items
 
 def fetch_neodb_data():
