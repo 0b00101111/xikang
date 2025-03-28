@@ -37,6 +37,10 @@ def fetch_neodb_data():
         'metadata': {
             'username': NEODB_USERNAME,
             'fetch_time': time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
+        },
+        'graph_data': {
+            'nodes': [],
+            'links': []
         }
     }
     
@@ -60,6 +64,15 @@ def fetch_neodb_data():
                 handle = user_url.rstrip('/').split('/')[-1]
                 all_data['metadata']['handle'] = handle
                 print(f"Extracted handle: {handle}")
+                
+                # Add user as a central node in the graph
+                all_data['graph_data']['nodes'].append({
+                    'id': 'user',
+                    'name': user_data.get('display_name', 'User'),
+                    'type': 'user',
+                    'group': 'center',
+                    'size': 25
+                })
         else:
             print(f"Failed to fetch user profile: {response.text[:200]}")
             return False
@@ -67,105 +80,9 @@ def fetch_neodb_data():
         print(f"Error fetching user profile: {e}")
         return False
     
-    # 2. Fetch user preferences
+    # 2. Fetch user tags (focus on these as they're returning data)
     try:
-        print("\n2. Fetching user preferences")
-        pref_endpoint = f"{BASE_URL}/api/me/preference"
-        print(f"Endpoint: {pref_endpoint}")
-        
-        response = requests.get(pref_endpoint, headers=headers)
-        print(f"Status code: {response.status_code}")
-        
-        if response.status_code == 200:
-            pref_data = response.json()
-            all_data['preferences'] = pref_data
-            print("Successfully retrieved user preferences")
-        else:
-            print(f"Failed to fetch user preferences: {response.text[:200]}")
-    except Exception as e:
-        print(f"Error fetching user preferences: {e}")
-    
-    # 3. Fetch user collections
-    try:
-        print("\n3. Fetching user collections")
-        collections_endpoint = f"{BASE_URL}/api/me/collection/"
-        print(f"Endpoint: {collections_endpoint}")
-        
-        response = requests.get(collections_endpoint, headers=headers)
-        print(f"Status code: {response.status_code}")
-        
-        if response.status_code == 200:
-            collections_data = response.json()
-            all_data['collections'] = collections_data
-            print(f"Found {len(collections_data.get('data', []))} collections")
-            
-            # Fetch items for each collection
-            if 'data' in collections_data and collections_data['data']:
-                print("\nFetching items for each collection...")
-                for collection in collections_data['data']:
-                    collection_uuid = collection.get('uuid')
-                    collection_title = collection.get('title')
-                    
-                    if collection_uuid:
-                        items_endpoint = f"{BASE_URL}/api/me/collection/{collection_uuid}/item/"
-                        print(f"Fetching items for collection: {collection_title} (UUID: {collection_uuid})")
-                        
-                        items_response = requests.get(items_endpoint, headers=headers)
-                        if items_response.status_code == 200:
-                            items_data = items_response.json()
-                            collection['items'] = items_data.get('data', [])
-                            print(f"  - Retrieved {len(collection['items'])} items")
-                        else:
-                            print(f"  - Failed to retrieve items. Status: {items_response.status_code}")
-                        
-                        # Avoid rate limiting
-                        time.sleep(0.5)
-        else:
-            print(f"Failed to fetch collections: {response.text[:200]}")
-    except Exception as e:
-        print(f"Error fetching collections: {e}")
-    
-    # 4. Fetch user shelves (most important data)
-    shelf_types = ["wish", "doing", "done", "todo", "cancel"]
-    all_data['shelves'] = {}
-    
-    try:
-        print("\n4. Fetching user shelves")
-        handle = all_data['metadata'].get('handle')
-        
-        if handle:
-            for shelf_type in shelf_types:
-                print(f"\nFetching '{shelf_type}' shelf")
-                
-                # Try both authenticated and public endpoint
-                shelf_endpoints = [
-                    f"{BASE_URL}/api/me/shelf/{shelf_type}",
-                    f"{BASE_URL}/api/user/{handle}/shelf/{shelf_type}"
-                ]
-                
-                for endpoint in shelf_endpoints:
-                    print(f"Endpoint: {endpoint}")
-                    response = requests.get(endpoint, headers=headers)
-                    print(f"Status code: {response.status_code}")
-                    
-                    if response.status_code == 200:
-                        shelf_data = response.json()
-                        all_data['shelves'][shelf_type] = shelf_data
-                        print(f"Found {len(shelf_data.get('data', []))} items on {shelf_type} shelf")
-                        break
-                    else:
-                        print(f"Failed to fetch {shelf_type} shelf from {endpoint}")
-                
-                # Avoid rate limiting
-                time.sleep(0.5)
-        else:
-            print("Could not determine user handle, skipping shelf fetching")
-    except Exception as e:
-        print(f"Error fetching shelves: {e}")
-    
-    # 5. Fetch user tags
-    try:
-        print("\n5. Fetching user tags")
+        print("\n2. Fetching user tags")
         tags_endpoint = f"{BASE_URL}/api/me/tag/"
         print(f"Endpoint: {tags_endpoint}")
         
@@ -175,24 +92,77 @@ def fetch_neodb_data():
         if response.status_code == 200:
             tags_data = response.json()
             all_data['tags'] = tags_data
-            print(f"Found {len(tags_data.get('data', []))} tags")
             
-            # Fetch items for each tag
-            if 'data' in tags_data and tags_data['data']:
-                print("\nFetching items for each tag...")
-                for tag in tags_data['data']:
-                    tag_uuid = tag.get('uuid')
-                    tag_name = tag.get('name')
+            tag_count = len(tags_data.get('data', []))
+            print(f"Found {tag_count} tags")
+            
+            # Add tags as nodes in the graph
+            for i, tag in enumerate(tags_data.get('data', [])):
+                tag_uuid = tag.get('uuid')
+                tag_name = tag.get('name')
+                
+                if tag_uuid:
+                    # Add this tag as a node
+                    all_data['graph_data']['nodes'].append({
+                        'id': f"tag_{tag_uuid}",
+                        'name': tag_name or f"Tag {i+1}",
+                        'type': 'tag',
+                        'group': 'tag',
+                        'size': 10
+                    })
                     
+                    # Link this tag to the user
+                    all_data['graph_data']['links'].append({
+                        'source': 'user',
+                        'target': f"tag_{tag_uuid}",
+                        'type': 'has_tag',
+                        'value': 2
+                    })
+                    
+                    # Fetch items for each tag
                     if tag_uuid:
                         tag_items_endpoint = f"{BASE_URL}/api/me/tag/{tag_uuid}/item/"
-                        print(f"Fetching items for tag: {tag_name} (UUID: {tag_uuid})")
+                        print(f"Fetching items for tag: {tag_name or tag_uuid}")
                         
                         tag_items_response = requests.get(tag_items_endpoint, headers=headers)
                         if tag_items_response.status_code == 200:
                             tag_items_data = tag_items_response.json()
                             tag['items'] = tag_items_data.get('data', [])
-                            print(f"  - Retrieved {len(tag['items'])} items")
+                            item_count = len(tag['items'])
+                            print(f"  - Retrieved {item_count} items")
+                            
+                            # Add items as nodes
+                            for item in tag['items']:
+                                item_uuid = item.get('uuid') or item.get('item', {}).get('uuid')
+                                item_title = item.get('title') or item.get('item', {}).get('title')
+                                item_type = item.get('type') or item.get('item', {}).get('type')
+                                
+                                if item_uuid:
+                                    # Check if this item node already exists
+                                    exists = False
+                                    for node in all_data['graph_data']['nodes']:
+                                        if node['id'] == f"item_{item_uuid}":
+                                            exists = True
+                                            break
+                                    
+                                    # Add the item node if it doesn't exist
+                                    if not exists:
+                                        all_data['graph_data']['nodes'].append({
+                                            'id': f"item_{item_uuid}",
+                                            'name': item_title or f"Item {item_uuid[:8]}",
+                                            'type': item_type or 'unknown',
+                                            'group': item_type or 'item',
+                                            'size': 5,
+                                            'data': item
+                                        })
+                                    
+                                    # Link this item to the tag
+                                    all_data['graph_data']['links'].append({
+                                        'source': f"tag_{tag_uuid}",
+                                        'target': f"item_{item_uuid}",
+                                        'type': 'contains',
+                                        'value': 1
+                                    })
                         else:
                             print(f"  - Failed to retrieve tag items. Status: {tag_items_response.status_code}")
                         
@@ -203,84 +173,116 @@ def fetch_neodb_data():
     except Exception as e:
         print(f"Error fetching tags: {e}")
     
-    # 6. Fetch user reviews
+    # 3. Fetch shelf data using the correct shelf types according to the API documentation
     try:
-        print("\n6. Fetching user reviews")
-        reviews_endpoint = f"{BASE_URL}/api/me/review/"
-        print(f"Endpoint: {reviews_endpoint}")
+        print("\n3. Fetching shelf data with correct types")
         
-        response = requests.get(reviews_endpoint, headers=headers)
-        print(f"Status code: {response.status_code}")
+        # The correct shelf types according to the API documentation
+        shelf_types = ["wishlist", "progress", "complete", "dropped"]
+        categories = ["book", "movie", "tv", "album", "game", "podcast"]
         
-        if response.status_code == 200:
-            reviews_data = response.json()
-            all_data['reviews'] = reviews_data
-            print(f"Found {len(reviews_data.get('data', []))} reviews")
-        else:
-            print(f"Failed to fetch reviews: {response.text[:200]}")
-    except Exception as e:
-        print(f"Error fetching reviews: {e}")
-    
-    # 7. Fetch trending data for exploration
-    try:
-        print("\n7. Fetching trending data")
-        trending_types = ["book", "movie", "tv", "music", "game", "podcast", "collection"]
-        all_data['trending'] = {}
+        all_data['shelf_items'] = {}
+        total_shelf_items = 0
         
-        for trending_type in trending_types:
-            trending_endpoint = f"{BASE_URL}/api/trending/{trending_type}/"
-            print(f"Endpoint: {trending_endpoint}")
+        # Create a node for each shelf type
+        for shelf_type in shelf_types:
+            all_data['graph_data']['nodes'].append({
+                'id': f"shelf_{shelf_type}",
+                'name': shelf_type.capitalize(),
+                'type': 'shelf',
+                'group': 'shelf',
+                'size': 15
+            })
             
-            response = requests.get(trending_endpoint, headers=headers)
+            # Link shelf to user
+            all_data['graph_data']['links'].append({
+                'source': 'user',
+                'target': f"shelf_{shelf_type}",
+                'type': 'has_shelf',
+                'value': 3
+            })
+        
+        # Fetch each shelf type
+        for shelf_type in shelf_types:
+            print(f"\nFetching '{shelf_type}' shelf")
+            
+            # Try with and without category parameter
+            all_endpoint = f"{BASE_URL}/api/me/shelf/{shelf_type}"
+            print(f"Fetching all items: {all_endpoint}")
+            
+            response = requests.get(all_endpoint, headers=headers)
             print(f"Status code: {response.status_code}")
             
             if response.status_code == 200:
-                trending_data = response.json()
-                all_data['trending'][trending_type] = trending_data
-                print(f"Retrieved trending {trending_type} data")
+                items_data = response.json()
+                
+                if isinstance(items_data, dict) and 'data' in items_data:
+                    key = f"all_{shelf_type}"
+                    all_data['shelf_items'][key] = items_data
+                    item_count = len(items_data['data'])
+                    total_shelf_items += item_count
+                    print(f"  - Found {item_count} items on '{shelf_type}' shelf")
+                    
+                    # Add these items to the graph
+                    for item in items_data['data']:
+                        item_data = item.get('item', {})
+                        item_uuid = item_data.get('uuid')
+                        item_title = item_data.get('title')
+                        item_type = item_data.get('category') or item_data.get('type')
+                        
+                        if item_uuid:
+                            # Check if this item node already exists
+                            exists = False
+                            for node in all_data['graph_data']['nodes']:
+                                if node['id'] == f"item_{item_uuid}":
+                                    exists = True
+                                    break
+                            
+                            # Add the item node if it doesn't exist
+                            if not exists:
+                                all_data['graph_data']['nodes'].append({
+                                    'id': f"item_{item_uuid}",
+                                    'name': item_title or f"Item {item_uuid[:8]}",
+                                    'type': item_type or 'unknown',
+                                    'group': item_type or 'item',
+                                    'status': shelf_type,
+                                    'size': 5,
+                                    'data': item
+                                })
+                            
+                            # Link this item to its shelf
+                            all_data['graph_data']['links'].append({
+                                'source': f"shelf_{shelf_type}",
+                                'target': f"item_{item_uuid}",
+                                'type': 'contains',
+                                'value': 1
+                            })
             else:
-                print(f"Failed to fetch trending {trending_type}: {response.text[:200]}")
+                print(f"  - Failed to fetch items. Status: {response.status_code}")
             
-            # Avoid rate limiting
-            time.sleep(0.5)
+            # Now try with specific categories
+            for category in categories:
+                category_endpoint = f"{BASE_URL}/api/me/shelf/{shelf_type}?category={category}"
+                print(f"Fetching {category} items: {category_endpoint}")
+                
+                cat_response = requests.get(category_endpoint, headers=headers)
+                print(f"Status code: {cat_response.status_code}")
+                
+                if cat_response.status_code == 200:
+                    cat_items_data = cat_response.json()
+                    
+                    if isinstance(cat_items_data, dict) and 'data' in cat_items_data and cat_items_data['data']:
+                        key = f"{category}_{shelf_type}"
+                        all_data['shelf_items'][key] = cat_items_data
+                        item_count = len(cat_items_data['data'])
+                        print(f"  - Found {item_count} {category} items with status '{shelf_type}'")
+                
+                # Avoid rate limiting
+                time.sleep(0.3)
+        
+        print(f"\nTotal shelf items found: {total_shelf_items}")
     except Exception as e:
-        print(f"Error fetching trending data: {e}")
-    
-    # 8. Check for any notes the user might have
-    try:
-        # For notes, we need item IDs from shelves or collections
-        print("\n8. Checking for notes on items")
-        item_uuids = set()
-        
-        # Collect item UUIDs from shelves
-        for shelf_type, shelf in all_data.get('shelves', {}).items():
-            if isinstance(shelf, dict) and 'data' in shelf:
-                for item in shelf['data']:
-                    item_uuid = item.get('item', {}).get('uuid')
-                    if item_uuid:
-                        item_uuids.add(item_uuid)
-        
-        print(f"Found {len(item_uuids)} unique items to check for notes")
-        
-        # Get notes for each item (limit to max 10 to avoid too many requests)
-        sample_items = list(item_uuids)[:10]
-        all_data['notes'] = {}
-        
-        for item_uuid in sample_items:
-            notes_endpoint = f"{BASE_URL}/api/me/note/item/{item_uuid}/"
-            print(f"Checking for notes on item: {item_uuid}")
-            
-            response = requests.get(notes_endpoint, headers=headers)
-            if response.status_code == 200:
-                notes_data = response.json()
-                if 'data' in notes_data and notes_data['data']:
-                    all_data['notes'][item_uuid] = notes_data
-                    print(f"  - Found {len(notes_data['data'])} notes")
-            
-            # Avoid rate limiting
-            time.sleep(0.5)
-    except Exception as e:
-        print(f"Error checking for notes: {e}")
+        print(f"Error fetching shelf items: {e}")
     
     # Save the data
     try:
@@ -292,22 +294,20 @@ def fetch_neodb_data():
         
         print(f"\nData saved to {output_file}")
         
-        # Print summary of data collected
-        print("\nData collection summary:")
-        for key, value in all_data.items():
-            if key == 'metadata':
-                continue
-                
-            if isinstance(value, dict):
-                if 'data' in value:
-                    print(f"- {key}: {len(value['data'])} items")
-                else:
-                    sub_items = sum(len(sub.get('data', [])) for sub in value.values() if isinstance(sub, dict) and 'data' in sub)
-                    print(f"- {key}: {len(value)} categories with {sub_items} total items")
-            elif isinstance(value, list):
-                print(f"- {key}: {len(value)} items")
-            else:
-                print(f"- {key}: {type(value).__name__}")
+        # Print summary of graph data
+        nodes_count = len(all_data['graph_data']['nodes'])
+        links_count = len(all_data['graph_data']['links'])
+        print(f"\nGraph data created: {nodes_count} nodes and {links_count} links")
+        
+        # Print grouped counts
+        node_types = {}
+        for node in all_data['graph_data']['nodes']:
+            node_type = node.get('type', 'unknown')
+            node_types[node_type] = node_types.get(node_type, 0) + 1
+        
+        print("\nNode types in graph:")
+        for node_type, count in node_types.items():
+            print(f"- {node_type}: {count} nodes")
         
         return True
     except Exception as e:
