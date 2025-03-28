@@ -68,34 +68,46 @@ function processNeoDBAData(rawData) {
     // Deep inspect the first few movie nodes
     movieNodes.slice(0, 3).forEach(node => {
         console.log('\n=== DETAILED MOVIE NODE INSPECTION ===');
-        console.log('Node structure:', JSON.stringify(node, null, 2));
-        console.log('Available fields:', Object.keys(node));
-        if (node.data) {
-            console.log('Data fields:', Object.keys(node.data));
-        }
+        console.log('Movie ID:', node.id);
+        console.log('Movie Name:', node.name);
+        console.log('Basic Fields:', {
+            type: node.type,
+            category: node.category,
+            hasData: !!node.data
+        });
 
-        // Look for any fields that might contain creator information
-        const allFields = Object.entries(node);
-        console.log('\nAll node fields:', allFields.map(([key, value]) => {
-            return {
-                key,
+        if (node.data) {
+            console.log('\nData Object Structure:');
+            const dataFields = Object.entries(node.data).map(([key, value]) => ({
+                field: key,
                 type: typeof value,
                 isArray: Array.isArray(value),
-                preview: value && typeof value === 'object' ? 
-                    (Array.isArray(value) ? `Array(${value.length})` : Object.keys(value)) : 
+                sample: value && typeof value === 'object' ? 
+                    (Array.isArray(value) ? value.slice(0, 3) : Object.keys(value)) : 
                     String(value).substring(0, 100)
-            };
-        }));
+            }));
+            console.log(JSON.stringify(dataFields, null, 2));
 
-        // Look for potential creator information in any object fields
-        const objectFields = allFields.filter(([key, value]) => 
-            typeof value === 'object' && 
-            value !== null
+            // Specifically look for creator-related fields
+            const creatorFields = ['director', 'actor', 'playwright', 'cast', 'crew', 'creators'];
+            creatorFields.forEach(field => {
+                if (node.data[field]) {
+                    console.log(`\nFound ${field}:`, node.data[field]);
+                }
+            });
+        }
+
+        // Look for creator information in the raw links
+        const relatedLinks = rawData.graph_data.links.filter(link => 
+            (typeof link.source === 'object' ? link.source.id === node.id : link.source === node.id) ||
+            (typeof link.target === 'object' ? link.target.id === node.id : link.target === node.id)
         );
-        if (objectFields.length > 0) {
-            console.log('\nDetailed object fields:', objectFields.map(([key, value]) => ({
-                key,
-                value: JSON.stringify(value, null, 2)
+        
+        if (relatedLinks.length > 0) {
+            console.log('\nRelated Links:', relatedLinks.map(link => ({
+                source: typeof link.source === 'object' ? link.source.id : link.source,
+                target: typeof link.target === 'object' ? link.target.id : link.target,
+                type: link.type
             })));
         }
     });
