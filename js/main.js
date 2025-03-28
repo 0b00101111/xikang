@@ -12,76 +12,46 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
     }
     
-    // Load data from the JSON file
+    // Load and process the data
     fetch('data/neodb-data.json')
         .then(response => response.json())
         .then(rawData => {
+            console.log('=== Raw Data Loaded ===');
+            console.log('Raw data structure:', rawData);
+
             // Process the data
             const processedData = processNeoDBAData(rawData);
             
-            // Detailed data inspection
-            console.log("=== DETAILED DATA INSPECTION ===");
-            console.log("Raw data structure:", {
-                hasGraphData: !!rawData.graph_data,
-                totalRawNodes: rawData.graph_data?.nodes?.length || 0,
-                totalRawLinks: rawData.graph_data?.links?.length || 0
-            });
-            
-            if (!processedData) {
-                throw new Error('Data processing failed - no data returned');
-            }
-            
-            console.log("\nProcessed data structure:");
-            console.log("Total nodes:", processedData.nodes.length);
-            console.log("Node breakdown:", processedData.nodes.reduce((acc, node) => {
-                acc[node.type] = acc[node.type] || { total: 0, examples: [] };
-                acc[node.type].total++;
-                if (acc[node.type].examples.length < 3) {
-                    acc[node.type].examples.push({
-                        id: node.id,
-                        name: node.name,
-                        type: node.type,
-                        role: node.role
-                    });
-                }
+            console.log('=== Processed Data ===');
+            console.log('Total nodes:', processedData.nodes.length);
+            console.log('Node types:', processedData.nodes.reduce((acc, n) => {
+                acc[n.type] = (acc[n.type] || 0) + 1;
                 return acc;
             }, {}));
+            console.log('Sample nodes:', processedData.nodes.slice(0, 3));
             
-            console.log("\nTotal links:", processedData.links.length);
-            console.log("Link breakdown:", processedData.links.reduce((acc, link) => {
-                acc[link.type] = acc[link.type] || { total: 0, examples: [] };
-                acc[link.type].total++;
-                if (acc[link.type].examples.length < 3) {
-                    acc[link.type].examples.push({
-                        source: link.source,
-                        target: link.target,
-                        type: link.type
-                    });
-                }
+            console.log('Total links:', processedData.links.length);
+            console.log('Link types:', processedData.links.reduce((acc, l) => {
+                acc[l.type] = (acc[l.type] || 0) + 1;
                 return acc;
             }, {}));
-            
-            // Verify data integrity
-            const nodeIds = new Set(processedData.nodes.map(n => n.id));
-            const invalidLinks = processedData.links.filter(link => 
-                !nodeIds.has(typeof link.source === 'object' ? link.source.id : link.source) ||
-                !nodeIds.has(typeof link.target === 'object' ? link.target.id : link.target)
-            );
-            
-            if (invalidLinks.length > 0) {
-                console.error("Found invalid links:", invalidLinks);
-            }
-            
+            console.log('Sample links:', processedData.links.slice(0, 3));
+
             // Initialize the visualization
             graphVisualization.init('graph-container', processedData);
-            
+
             // Add event listeners for zoom controls
             document.getElementById('zoom-in').addEventListener('click', graphVisualization.zoomIn);
             document.getElementById('zoom-out').addEventListener('click', graphVisualization.zoomOut);
             document.getElementById('reset-view').addEventListener('click', graphVisualization.resetView);
             
             // Add window resize handler
-            window.addEventListener('resize', graphVisualization.resize);
+            window.addEventListener('resize', () => {
+                graphVisualization.resize();
+            });
+
+            // Export data to CSV for debugging
+            exportToCSV(processedData);
             
             // Hide loading indicator
             loadingElement.style.display = 'none';

@@ -24,8 +24,9 @@ function exportToCSV(processedData) {
 function processNeoDBAData(rawData) {
     console.log("=== RAW DATA INSPECTION ===");
     console.log("Raw data structure:", {
-        totalNodes: rawData.graph_data.nodes.length,
-        totalLinks: rawData.graph_data.links.length
+        totalNodes: rawData.graph_data?.nodes?.length,
+        totalLinks: rawData.graph_data?.links?.length,
+        sampleNode: rawData.graph_data?.nodes?.[0]
     });
 
     // Check if data is in the expected format
@@ -46,10 +47,21 @@ function processNeoDBAData(rawData) {
     
     // Filter movie nodes from the original data
     const movieNodes = rawData.graph_data.nodes.filter(node => {
-        return node.type === 'movie' || 
-               node.category === 'movie' || 
-               (node.type === 'media' && node.category === 'movie') ||
-               (node.data && (node.data.type === 'movie' || node.data.category === 'movie'));
+        const isMovie = node.type === 'movie' || 
+                       node.category === 'movie' || 
+                       (node.type === 'media' && node.category === 'movie') ||
+                       (node.data && (node.data.type === 'movie' || node.data.category === 'movie'));
+        
+        if (isMovie) {
+            console.log('Found movie node:', {
+                id: node.id,
+                name: node.name,
+                type: node.type,
+                category: node.category,
+                data: node.data
+            });
+        }
+        return isMovie;
     });
 
     console.log(`Found ${movieNodes.length} movie nodes`);
@@ -57,26 +69,22 @@ function processNeoDBAData(rawData) {
     // Determine the shelf for each movie node
     const nodeShelfMap = new Map();
     
-    if (rawData.graph_data && rawData.graph_data.links) {
+    if (rawData.graph_data.links) {
         rawData.graph_data.links.forEach(link => {
-            if (link.source === 'shelf_wishlist' || 
-                link.source === 'shelf_progress' || 
-                link.source === 'shelf_complete' || 
-                link.source === 'shelf_dropped') {
-                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-                const shelfType = link.source.replace('shelf_', '');
-                nodeShelfMap.set(targetId, shelfType);
-            }
-            else if (link.target === 'shelf_wishlist' || 
-                     link.target === 'shelf_progress' || 
-                     link.target === 'shelf_complete' || 
-                     link.target === 'shelf_dropped') {
-                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-                const shelfType = link.target.replace('shelf_', '');
-                nodeShelfMap.set(sourceId, shelfType);
-            }
+            const shelfTypes = ['shelf_wishlist', 'shelf_progress', 'shelf_complete', 'shelf_dropped'];
+            shelfTypes.forEach(shelfType => {
+                if (link.source === shelfType) {
+                    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                    nodeShelfMap.set(targetId, shelfType.replace('shelf_', ''));
+                } else if (link.target === shelfType) {
+                    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                    nodeShelfMap.set(sourceId, shelfType.replace('shelf_', ''));
+                }
+            });
         });
     }
+
+    console.log('Shelf mappings:', Array.from(nodeShelfMap.entries()));
 
     // Process each movie node
     movieNodes.forEach(node => {
@@ -97,30 +105,26 @@ function processNeoDBAData(rawData) {
             }
         };
         
-        // Add movie node
+        // Add movie node if not already added
         if (!nodeIds.has(nodeId)) {
             processedData.nodes.push(processedNode);
             nodeIds.add(nodeId);
+            console.log('Added movie node:', processedNode);
         }
 
         // Process creators
         const creators = {
-            director: nodeData.director || [],
-            actor: nodeData.actor || [],
-            playwright: nodeData.playwright || []
+            director: Array.isArray(nodeData.director) ? nodeData.director : [nodeData.director],
+            actor: Array.isArray(nodeData.actor) ? nodeData.actor : [nodeData.actor],
+            playwright: Array.isArray(nodeData.playwright) ? nodeData.playwright : [nodeData.playwright]
         };
 
         // Log creator data for this movie
-        console.log(`\nProcessing creators for movie: ${processedNode.name}`);
-        console.log('Creator data:', creators);
+        console.log(`Processing creators for movie: ${processedNode.name}`, creators);
 
         // Process each type of creator
         Object.entries(creators).forEach(([role, names]) => {
-            if (!Array.isArray(names)) {
-                names = [names];
-            }
-
-            names.filter(name => name).forEach(name => {
+            names.filter(name => name && typeof name === 'string').forEach(name => {
                 const creatorId = `${role}_${createIdFromName(name)}`;
                 console.log(`Processing ${role}: ${name} (ID: ${creatorId})`);
 
@@ -134,10 +138,10 @@ function processNeoDBAData(rawData) {
                     };
                     processedData.nodes.push(creatorNode);
                     creatorIds.add(creatorId);
-                    console.log(`Added new creator node: ${name} (${role})`);
+                    console.log(`Added new creator node:`, creatorNode);
                 }
 
-                // Add link
+                // Add link from creator to movie
                 const linkType = role === 'director' ? 'directed' :
                                role === 'actor' ? 'acted_in' : 'wrote';
                 
@@ -153,10 +157,11 @@ function processNeoDBAData(rawData) {
 
     // Log final statistics
     console.log("\n=== FINAL STATISTICS ===");
-    console.log("Total movies:", processedData.nodes.filter(n => n.type === 'movie').length);
-    console.log("Total creators:", processedData.nodes.filter(n => n.type === 'creator').length);
+    const movieCount = processedData.nodes.filter(n => n.type === 'movie').length;
+    const creatorCount = processedData.nodes.filter(n => n.type === 'creator').length;
+    console.log(`Total nodes: ${processedData.nodes.length} (${movieCount} movies, ${creatorCount} creators)`);
     console.log("Total links:", processedData.links.length);
-    console.log("\nCreator breakdown:", 
+    console.log("Creator breakdown:", 
         processedData.nodes
             .filter(n => n.type === 'creator')
             .reduce((acc, n) => {
@@ -164,6 +169,17 @@ function processNeoDBAData(rawData) {
                 return acc;
             }, {})
     );
+
+    // Verify data integrity
+    const allNodeIds = new Set(processedData.nodes.map(n => n.id));
+    const invalidLinks = processedData.links.filter(link => 
+        !allNodeIds.has(typeof link.source === 'object' ? link.source.id : link.source) ||
+        !allNodeIds.has(typeof link.target === 'object' ? link.target.id : link.target)
+    );
+    
+    if (invalidLinks.length > 0) {
+        console.error("Found invalid links:", invalidLinks);
+    }
 
     return processedData;
 }
