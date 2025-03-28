@@ -22,6 +22,33 @@ function exportToCSV(processedData) {
 }
 
 function processNeoDBAData(rawData) {
+    console.log("=== RAW DATA INSPECTION ===");
+    console.log("Raw data structure:", {
+        totalNodes: rawData.graph_data.nodes.length,
+        totalLinks: rawData.graph_data.links.length
+    });
+    
+    console.log("\nFirst 10 nodes:");
+    rawData.graph_data.nodes.slice(0, 10).forEach(node => {
+        console.log({
+            id: node.id,
+            name: node.name,
+            type: node.type,
+            category: node.category,
+            data: node.data
+        });
+    });
+    
+    console.log("\nFirst 10 links:");
+    rawData.graph_data.links.slice(0, 10).forEach(link => {
+        console.log({
+            source: link.source,
+            target: link.target,
+            type: link.type
+        });
+    });
+    
+    console.log("\n=== STARTING PROCESSING ===");
     console.log("Processing NeoDB data for movie visualization");
     
     // Check if data is in the expected format
@@ -39,13 +66,6 @@ function processNeoDBAData(rawData) {
     // Track node IDs to avoid duplicates
     const nodeIds = new Set();
     const creatorIds = new Set();
-    
-    // Log raw data structure
-    console.log("Raw data structure:", {
-        totalNodes: rawData.graph_data.nodes.length,
-        totalLinks: rawData.graph_data.links.length,
-        sampleNode: rawData.graph_data.nodes[0]
-    });
     
     // Filter movie nodes from the original data
     const movieNodes = rawData.graph_data.nodes.filter(node => {
