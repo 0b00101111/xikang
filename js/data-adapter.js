@@ -151,3 +151,120 @@ function createIdFromName(name) {
         .replace(/^_|_$/g, '')
         .substring(0, 20);
 }
+
+function processGraphData(rawData) {
+    console.log('Processing raw data:', {
+        totalNodes: rawData.nodes.length,
+        totalLinks: rawData.links.length
+    });
+
+    const processedData = {
+        nodes: [],
+        links: []
+    };
+
+    // Create a map for quick node lookup
+    const nodeMap = new Map();
+    
+    // Process movie nodes first
+    rawData.nodes.forEach(nodeData => {
+        if (nodeData.type === 'movie') {
+            const movieNode = {
+                id: nodeData.id,
+                name: nodeData.name,
+                type: 'movie',
+                shelf: nodeData.shelf || 'unknown',
+                rating: nodeData.rating,
+                url: nodeData.url
+            };
+            
+            processedData.nodes.push(movieNode);
+            nodeMap.set(movieNode.id, movieNode);
+
+            // Process directors
+            if (nodeData.directors && nodeData.directors.length > 0) {
+                nodeData.directors.forEach(director => {
+                    const directorId = `director_${director.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    if (!nodeMap.has(directorId)) {
+                        const directorNode = {
+                            id: directorId,
+                            name: director,
+                            type: 'creator',
+                            role: 'director'
+                        };
+                        processedData.nodes.push(directorNode);
+                        nodeMap.set(directorId, directorNode);
+                    }
+                    processedData.links.push({
+                        source: directorId,
+                        target: movieNode.id,
+                        type: 'directed'
+                    });
+                });
+            }
+
+            // Process only top 5 actors
+            if (nodeData.actors && nodeData.actors.length > 0) {
+                const topActors = nodeData.actors.slice(0, 5); // Limit to top 5 actors
+                topActors.forEach(actor => {
+                    const actorId = `actor_${actor.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    if (!nodeMap.has(actorId)) {
+                        const actorNode = {
+                            id: actorId,
+                            name: actor,
+                            type: 'creator',
+                            role: 'actor'
+                        };
+                        processedData.nodes.push(actorNode);
+                        nodeMap.set(actorId, actorNode);
+                    }
+                    processedData.links.push({
+                        source: actorId,
+                        target: movieNode.id,
+                        type: 'acted_in'
+                    });
+                });
+            }
+
+            // Process playwrights
+            if (nodeData.playwrights && nodeData.playwrights.length > 0) {
+                nodeData.playwrights.forEach(playwright => {
+                    const playwrightId = `playwright_${playwright.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                    if (!nodeMap.has(playwrightId)) {
+                        const playwrightNode = {
+                            id: playwrightId,
+                            name: playwright,
+                            type: 'creator',
+                            role: 'playwright'
+                        };
+                        processedData.nodes.push(playwrightNode);
+                        nodeMap.set(playwrightId, playwrightNode);
+                    }
+                    processedData.links.push({
+                        source: playwrightId,
+                        target: movieNode.id,
+                        type: 'wrote'
+                    });
+                });
+            }
+        }
+    });
+
+    // Log statistics
+    const movieCount = processedData.nodes.filter(n => n.type === 'movie').length;
+    const directorCount = processedData.nodes.filter(n => n.type === 'creator' && n.role === 'director').length;
+    const actorCount = processedData.nodes.filter(n => n.type === 'creator' && n.role === 'actor').length;
+    const playwrightCount = processedData.nodes.filter(n => n.type === 'creator' && n.role === 'playwright').length;
+
+    console.log('Processed data statistics:', {
+        totalNodes: processedData.nodes.length,
+        totalLinks: processedData.links.length,
+        movies: movieCount,
+        directors: directorCount,
+        actors: actorCount,
+        playwrights: playwrightCount,
+        averageActorsPerMovie: actorCount / movieCount
+    });
+
+    return processedData;
+}

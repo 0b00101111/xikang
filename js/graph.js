@@ -220,61 +220,75 @@ const graphVisualization = (function() {
         const fixedScale = 0.5;
         g.attr('transform', `scale(${fixedScale})`);
         
-        // Optimized force simulation
+        // Optimized force simulation with reduced complexity
         simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(links)
                 .id(d => d.id)
-                .distance(30)
-                .strength(0.1))
+                .distance(d => {
+                    // Shorter distances for actor links to reduce spread
+                    if (d.type === 'acted_in') return 20;
+                    return 30;
+                })
+                .strength(0.3))
             .force('charge', d3.forceManyBody()
-                .strength(-10)
-                .distanceMax(100))
-            .force('x', d3.forceX().strength(0.02))
-            .force('y', d3.forceY().strength(0.02))
+                .strength(d => d.type === 'movie' ? -30 : -10)
+                .distanceMax(150))
+            .force('x', d3.forceX().strength(0.1))
+            .force('y', d3.forceY().strength(0.1))
             .force('collision', d3.forceCollide()
-                .radius(d => getNodeSize(d) * 1.2)
-                .strength(0.2))
-            .velocityDecay(0.6)
-            .alphaDecay(0.05)
-            .alpha(0.3)
+                .radius(d => getNodeSize(d) * 1.5)
+                .strength(0.5))
+            .velocityDecay(0.7) // Faster stabilization
+            .alphaDecay(0.1) // Much faster cooling
+            .alpha(0.5) // Higher initial energy
             .on('tick', () => {
-                // Viewport culling - only render nodes within view
+                // Viewport culling with larger margin for smoother panning
                 const scale = fixedScale;
-                const margin = 100; // Extra margin to prevent pop-in
+                const margin = 200;
                 const visibleX = [-width/(2*scale) - margin, width/(2*scale) + margin];
                 const visibleY = [-height/(2*scale) - margin, height/(2*scale) + margin];
 
-                // Update positions but only render visible elements
-                nodes.forEach(d => {
+                // Batch updates for better performance
+                const visibleNodes = nodes.filter(d => {
                     d.visible = (
                         d.x >= visibleX[0] && d.x <= visibleX[1] &&
                         d.y >= visibleY[0] && d.y <= visibleY[1]
                     );
+                    return d.visible;
                 });
+
+                const visibleLinks = links.filter(d => 
+                    d.source.visible && d.target.visible
+                );
 
                 // Only update visible elements
                 requestAnimationFrame(() => {
-                    // Update visible links
+                    // Update links
                     link.attr('visibility', d => 
                         (d.source.visible && d.target.visible) ? 'visible' : 'hidden'
                     );
-                    link.filter(d => d.source.visible && d.target.visible)
-                        .attr('x1', d => d.source.x)
-                        .attr('y1', d => d.source.y)
-                        .attr('x2', d => d.target.x)
-                        .attr('y2', d => d.target.y);
+                    
+                    // Batch update visible links
+                    if (visibleLinks.length > 0) {
+                        link.filter(d => d.source.visible && d.target.visible)
+                            .attr('x1', d => d.source.x)
+                            .attr('y1', d => d.source.y)
+                            .attr('x2', d => d.target.x)
+                            .attr('y2', d => d.target.y);
+                    }
 
-                    // Update visible nodes
-                    node.attr('visibility', d => d.visible ? 'visible' : 'hidden');
-                    node.filter(d => d.visible)
-                        .attr('cx', d => d.x)
-                        .attr('cy', d => d.y);
+                    // Batch update visible nodes
+                    if (visibleNodes.length > 0) {
+                        node.attr('visibility', d => d.visible ? 'visible' : 'hidden');
+                        node.filter(d => d.visible)
+                            .attr('cx', d => d.x)
+                            .attr('cy', d => d.y);
 
-                    // Update visible labels
-                    nodeLabels.attr('visibility', d => d.visible ? 'visible' : 'hidden');
-                    nodeLabels.filter(d => d.visible)
-                        .attr('x', d => d.x)
-                        .attr('y', d => d.y);
+                        nodeLabels.attr('visibility', d => d.visible ? 'visible' : 'hidden');
+                        nodeLabels.filter(d => d.visible)
+                            .attr('x', d => d.x)
+                            .attr('y', d => d.y);
+                    }
                 });
             });
         
