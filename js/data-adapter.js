@@ -1,230 +1,116 @@
-// Enhanced NeoDB Data Adapter
-// This script converts the data from NeoDB API to the format expected by the visualization
-// It also reorganizes the graph to improve layout and add relationship information
+// Simplified NeoDB Data Adapter
+// Converts NeoDB API data to a format suitable for network visualization
 
 function processNeoDBAData(rawData) {
+    console.log("Processing NeoDB data");
+    
     // Check if data is in the expected format
     if (!rawData || !rawData.graph_data) {
         console.error("Invalid data format: Missing graph_data structure");
         return null;
     }
 
-    // Start with our processed data structure
+    // Start with an empty graph structure
     const processedData = {
         nodes: [],
-        links: [],
-        metadata: {
-            username: rawData.metadata?.username || "Unknown",
-            handle: rawData.metadata?.handle || "Unknown",
-            lastUpdated: rawData.metadata?.fetch_time || new Date().toISOString(),
-            mediaTypes: [],
-            creatorTypes: []
-        }
+        links: []
     };
     
     // Track node IDs to avoid duplicates
     const nodeIds = new Set();
     
-    // Set of unique media types to build metadata.mediaTypes
-    const mediaTypes = new Set();
-    
-    // Create the user node as the central point
-    const username = rawData.user?.display_name || rawData.metadata?.username || "User";
-    const userNode = {
-        id: 'user',
-        name: username,
-        type: 'user',
-        size: 30
-    };
-    processedData.nodes.push(userNode);
-    nodeIds.add('user');
-    
-    // Create nodes for shelves (one per shelf type)
-    const shelfTypes = {
-        'wishlist': 'Wishlist',
-        'progress': 'In Progress',
-        'complete': 'Completed',
-        'dropped': 'Dropped'
-    };
-    
-    Object.entries(shelfTypes).forEach(([id, name]) => {
-        const shelfId = `shelf_${id}`;
-        processedData.nodes.push({
-            id: shelfId,
-            name: name,
-            type: 'shelf',
-            size: 15
-        });
-        nodeIds.add(shelfId);
+    // Add nodes from the API data, excluding the user node
+    rawData.graph_data.nodes.forEach(node => {
+        // Skip user node - we'll create our own
+        if (node.id === 'user') return;
         
-        // Link shelf to user
+        // Create a simplified node
+        const processedNode = {
+            id: node.id,
+            name: node.name || "Unnamed",
+            type: node.type,
+            category: node.category || node.group
+        };
+        
+        processedData.nodes.push(processedNode);
+        nodeIds.add(node.id);
+    });
+    
+    // Add links, excluding those to the user node
+    rawData.graph_data.links.forEach(link => {
+        // Skip links to/from user node - we'll handle those differently
+        if (link.source === 'user' || link.target === 'user') return;
+        
         processedData.links.push({
-            source: 'user',
-            target: shelfId,
-            type: 'has_shelf',
-            value: 3
+            source: link.source,
+            target: link.target,
+            type: link.type || "linked"
         });
     });
     
-    // Create tag nodes
-    if (rawData.tags && rawData.tags.data) {
-        rawData.tags.data.forEach(tag => {
-            const tagName = tag.name || 'Unnamed Tag';
-            const tagId = `tag_${tag.uuid}`;
+    // Create central organizational nodes instead of user node
+    const organizationalNodes = [
+        { id: "books", name: "Books", type: "category" },
+        { id: "movies", name: "Movies", type: "category" },
+        { id: "tv", name: "TV Series", type: "category" },
+        { id: "music", name: "Music", type: "category" },
+        { id: "podcasts", name: "Podcasts", type: "category" }
+    ];
+    
+    // Add organizational nodes
+    organizationalNodes.forEach(node => {
+        if (!nodeIds.has(node.id)) {
+            processedData.nodes.push(node);
+            nodeIds.add(node.id);
+        }
+    });
+    
+    // Connect media nodes to their category nodes
+    processedData.nodes.forEach(node => {
+        if (node.type === 'media' || node.type === 'book' || node.type === 'movie' || 
+            node.type === 'tv' || node.type === 'music' || node.type === 'podcast') {
             
-            // Add tag node if it doesn't exist yet
-            if (!nodeIds.has(tagId)) {
-                processedData.nodes.push({
-                    id: tagId,
-                    name: tagName,
-                    type: 'tag',
-                    size: 12,
-                    uuid: tag.uuid
-                });
-                nodeIds.add(tagId);
-                
-                // Link tag to user
+            let categoryId = null;
+            
+            // Determine which category this node belongs to
+            if (node.type === 'book' || node.category === 'book') {
+                categoryId = "books";
+            } else if (node.type === 'movie' || node.category === 'movie') {
+                categoryId = "movies";
+            } else if (node.type === 'tv' || node.category === 'tv' || node.category === 'tvseries') {
+                categoryId = "tv";
+            } else if (node.type === 'music' || node.category === 'music') {
+                categoryId = "music";
+            } else if (node.type === 'podcast' || node.category === 'podcast') {
+                categoryId = "podcasts";
+            }
+            
+            // Add link to category if we found a match
+            if (categoryId && nodeIds.has(categoryId)) {
                 processedData.links.push({
-                    source: 'user',
-                    target: tagId,
-                    type: 'has_tag',
-                    value: 2
+                    source: categoryId,
+                    target: node.id,
+                    type: "contains"
                 });
             }
-            
-            // Process tag items if available
-            if (tag.items && Array.isArray(tag.items)) {
-                tag.items.forEach(item => {
-                    const itemId = processMediaItem(item, processedData);
-                    
-                    if (itemId) {
-                        // Link item to tag
-                        processedData.links.push({
-                            source: tagId,
-                            target: itemId,
-                            type: 'tagged_with',
-                            value: 1
-                        });
-                    }
-                });
-            }
+        }
+    });
+    
+    // Connect organizational nodes to each other to form a structure
+    for (let i = 0; i < organizationalNodes.length - 1; i++) {
+        processedData.links.push({
+            source: organizationalNodes[i].id,
+            target: organizationalNodes[i+1].id,
+            type: "related"
         });
     }
     
-    // Process shelf data
-    if (rawData.shelf_items) {
-        Object.entries(rawData.shelf_items).forEach(([key, shelfData]) => {
-            if (!shelfData || !shelfData.data || !Array.isArray(shelfData.data)) {
-                return;
-            }
-            
-            // Extract shelf type from the key
-            let shelfType = 'unknown';
-            if (key.includes('wishlist')) {
-                shelfType = 'wishlist';
-            } else if (key.includes('progress')) {
-                shelfType = 'progress';
-            } else if (key.includes('complete')) {
-                shelfType = 'complete';
-            } else if (key.includes('dropped')) {
-                shelfType = 'dropped';
-            }
-            
-            const shelfId = `shelf_${shelfType}`;
-            
-            // Process each item in the shelf
-            shelfData.data.forEach(shelfItem => {
-                // Extract the media item from the shelf item
-                const mediaItem = shelfItem.item;
-                if (!mediaItem) return;
-                
-                const itemId = processMediaItem(mediaItem, processedData);
-                
-                if (itemId) {
-                    // Link item to shelf
-                    processedData.links.push({
-                        source: shelfId,
-                        target: itemId,
-                        type: shelfType,
-                        value: 2
-                    });
-                }
-            });
-        });
-    }
+    // Connect first and last to form a circular structure
+    processedData.links.push({
+        source: organizationalNodes[0].id,
+        target: organizationalNodes[organizationalNodes.length-1].id,
+        type: "related"
+    });
     
-    // Process and create media items from the function
-    function processMediaItem(mediaItem, processedData) {
-        if (!mediaItem || !mediaItem.uuid) return null;
-        
-        const itemId = `media_${mediaItem.uuid}`;
-        
-        // Skip if we already processed this item
-        if (nodeIds.has(itemId)) {
-            return itemId;
-        }
-        
-        // Determine media type/category
-        let category = mediaItem.category || mediaItem.type;
-        if (!category) {
-            if (mediaItem.api_url) {
-                if (mediaItem.api_url.includes('/book/')) {
-                    category = 'book';
-                } else if (mediaItem.api_url.includes('/movie/')) {
-                    category = 'movie';
-                } else if (mediaItem.api_url.includes('/tv/')) {
-                    category = 'tv';
-                } else if (mediaItem.api_url.includes('/music/') || mediaItem.api_url.includes('/album/')) {
-                    category = 'music';
-                } else if (mediaItem.api_url.includes('/podcast/')) {
-                    category = 'podcast';
-                } else if (mediaItem.api_url.includes('/game/')) {
-                    category = 'game';
-                }
-            }
-        }
-        
-        // Default to 'unknown' if we couldn't determine the category
-        category = category || 'unknown';
-        
-        // Track media type for metadata
-        mediaTypes.add(category);
-        
-        // Create the media node
-        const mediaNode = {
-            id: itemId,
-            name: mediaItem.title || mediaItem.display_title || 'Untitled',
-            type: 'media',
-            category: category,
-            uuid: mediaItem.uuid
-        };
-        
-        // Add additional properties if available
-        if (mediaItem.rating) {
-            mediaNode.rating = typeof mediaItem.rating === 'number' ? 
-                mediaItem.rating : parseFloat(mediaItem.rating);
-        }
-        
-        if (mediaItem.url) {
-            mediaNode.url = mediaItem.url;
-        }
-        
-        if (mediaItem.cover_image_url) {
-            mediaNode.image = mediaItem.cover_image_url;
-        }
-        
-        // Add the node to our processed data
-        processedData.nodes.push(mediaNode);
-        nodeIds.add(itemId);
-        
-        return itemId;
-    }
-    
-    // Finalize metadata
-    processedData.metadata.mediaTypes = Array.from(mediaTypes);
-    
-    // For now, we don't have creator types in the API data, so we'll leave it empty
-    processedData.metadata.creatorTypes = [];
-
     return processedData;
 }
