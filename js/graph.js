@@ -21,13 +21,7 @@ const graphVisualization = (function() {
         if (d.type === 'movie') {
             return colorUtils.calculateMovieColor(d, nodes, links);
         } else if (d.type === 'creator') {
-            // Check if this creator has any completed movies
-            const hasCompletedMovie = links.some(link => {
-                const movieId = link.source === d.id ? link.target : link.source;
-                const movie = nodes.find(n => n.id === movieId && n.type === 'movie');
-                return movie && movie.shelf === 'complete';
-            });
-            return colorUtils.getCreatorColor(d.id, hasCompletedMovie);
+            return colorUtils.getCreatorColor(d.id, d.role === 'director');
         }
         return colorUtils.PALETTE.sumiInk3; // Default color
     }
@@ -172,28 +166,29 @@ const graphVisualization = (function() {
 
         // Update simulation
         simulation
-            .force('x', d3.forceX().strength(0.01))
-            .force('y', d3.forceY().strength(0.01))
+            .force('center', d3.forceCenter(0, 0))
+            .alpha(0.3)
             .restart();
     }
 
     // Initialize the visualization
     function init(containerId, graphData) {
-        console.log('Initializing with data:', graphData); // Debug log
+        console.log('Initializing visualization with:', {
+            nodes: graphData.nodes.length,
+            links: graphData.links.length
+        });
+        
+        // Store data
+        data = graphData;
+        nodes = graphData.nodes;
+        links = graphData.links;
         
         // Set dimensions based on container
         const container = document.getElementById(containerId);
         width = container.clientWidth;
         height = container.clientHeight;
         
-        // Store data
-        data = graphData;
-        nodes = graphData.nodes || [];
-        links = graphData.links || [];
-        
-        console.log('Nodes:', nodes.length, 'Links:', links.length); // Debug log
-        
-        // Create SVG with centered viewBox
+        // Create SVG
         svg = d3.select(`#${containerId}`)
             .append('svg')
             .attr('width', '100%')
@@ -211,27 +206,25 @@ const graphVisualization = (function() {
         
         svg.call(zoom);
         
-        // Create main group for transformation
+        // Create main group
         g = svg.append('g');
         
         // Create links
-        const linkGroup = g.append('g')
-            .attr('class', 'links');
-        
-        link = linkGroup.selectAll('line')
+        link = g.append('g')
+            .attr('class', 'links')
+            .selectAll('line')
             .data(links)
-            .enter().append('line')
+            .join('line')
             .attr('stroke', colorUtils.PALETTE.fujiGray)
             .attr('stroke-opacity', 0.3)
             .attr('stroke-width', 0.5);
         
         // Create nodes
-        const nodeGroup = g.append('g')
-            .attr('class', 'nodes');
-        
-        node = nodeGroup.selectAll('circle')
+        node = g.append('g')
+            .attr('class', 'nodes')
+            .selectAll('circle')
             .data(nodes)
-            .enter().append('circle')
+            .join('circle')
             .attr('r', getNodeSize)
             .attr('fill', getNodeColor)
             .attr('stroke', '#fff')
@@ -242,12 +235,11 @@ const graphVisualization = (function() {
                 .on('end', dragended));
         
         // Create labels
-        const labelGroup = g.append('g')
-            .attr('class', 'labels');
-        
-        nodeLabels = labelGroup.selectAll('text')
+        nodeLabels = g.append('g')
+            .attr('class', 'labels')
+            .selectAll('text')
             .data(nodes)
-            .enter().append('text')
+            .join('text')
             .attr('dx', 8)
             .attr('dy', 3)
             .text(d => d.name)
@@ -261,19 +253,22 @@ const graphVisualization = (function() {
         simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(links)
                 .id(d => d.id)
-                .distance(150)
-                .strength(0.5))
+                .distance(d => {
+                    // Longer distance between movies and creators
+                    const source = d.source.type || 'unknown';
+                    const target = d.target.type || 'unknown';
+                    if (source !== target) return 100;
+                    return 50;
+                })
+                .strength(0.3))
             .force('charge', d3.forceManyBody()
-                .strength(d => d.type === 'creator' ? -300 : -100)
-                .distanceMax(500))
-            .force('x', d3.forceX().strength(0.1))
-            .force('y', d3.forceY().strength(0.1))
+                .strength(d => d.type === 'creator' ? -100 : -30)
+                .distanceMax(300))
+            .force('x', d3.forceX().strength(0.05))
+            .force('y', d3.forceY().strength(0.05))
             .force('collision', d3.forceCollide()
                 .radius(d => getNodeSize(d) * 2)
-                .strength(0.5))
-            .alpha(0.3)
-            .alphaDecay(0.05)
-            .velocityDecay(0.6)
+                .strength(0.7))
             .on('tick', () => {
                 link
                     .attr('x1', d => d.source.x)
@@ -288,10 +283,14 @@ const graphVisualization = (function() {
                 nodeLabels
                     .attr('x', d => d.x)
                     .attr('y', d => d.y);
-            });
+            })
+            .alphaDecay(0.02) // Slower decay for better layout
+            .velocityDecay(0.4); // More dampening
         
-        // Log final node and link counts
-        console.log('Final counts - Nodes:', node.size(), 'Links:', link.size());
+        // Stop simulation after 3 seconds to prevent endless computation
+        setTimeout(() => {
+            if (simulation) simulation.stop();
+        }, 3000);
 
         // Add hover and click behaviors
         setupNodeInteractions();
