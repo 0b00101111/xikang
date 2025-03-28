@@ -284,12 +284,12 @@ def fetch_neodb_data():
     for shelf_type in shelf_types:
         try:
             print(f"\n2. Fetching movies from '{shelf_type}' shelf")
-            endpoint = f"{BASE_URL}/me/shelf/movie"  # Updated to use correct shelf endpoint
+            endpoint = f"{BASE_URL}/me/shelf/{shelf_type}"  # Include shelf type in path
             
             # Updated parameters based on NeoDB API requirements
             params = {
-                'status': shelf_type,
-                'type': 'movie'  # Ensure we only get movies
+                'page': 1,
+                'limit': 50
             }
             
             items = fetch_paginated_data(endpoint, headers, params)
@@ -298,6 +298,9 @@ def fetch_neodb_data():
             # Process each movie
             for item in items:
                 movie_data = item.get('item', {})
+                if not movie_data or movie_data.get('type') != 'movie':  # Only process movies
+                    continue
+                    
                 movie_id = str(movie_data.get('id'))  # Ensure ID is string
                 
                 if not movie_id:
