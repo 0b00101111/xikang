@@ -46,6 +46,7 @@ function processNeoDBAData(rawData) {
     const creatorIds = new Set();
     
     // Filter movie nodes from the original data
+    let inspectedCount = 0;
     const movieNodes = rawData.graph_data.nodes.filter(node => {
         const isMovie = node.type === 'movie' || 
                        node.category === 'movie' || 
@@ -53,27 +54,6 @@ function processNeoDBAData(rawData) {
                        (node.data && (node.data.type === 'movie' || node.data.category === 'movie'));
         
         if (isMovie) {
-            // Deep inspect the first few movie nodes
-            if (movieNodes?.length < 3) {
-                console.log('=== DETAILED MOVIE NODE INSPECTION ===');
-                console.log('Node structure:', JSON.stringify(node, null, 2));
-                console.log('Available fields:', Object.keys(node));
-                if (node.data) {
-                    console.log('Data fields:', Object.keys(node.data));
-                }
-                // Look for any fields that might contain creator information
-                const potentialCreatorFields = Object.entries(node)
-                    .filter(([key, value]) => 
-                        typeof value === 'object' && 
-                        value !== null && 
-                        !Array.isArray(value) &&
-                        key !== 'data'
-                    );
-                if (potentialCreatorFields.length > 0) {
-                    console.log('Potential creator-containing fields:', potentialCreatorFields);
-                }
-            }
-            
             console.log('Found movie node:', {
                 id: node.id,
                 name: node.name,
@@ -85,7 +65,42 @@ function processNeoDBAData(rawData) {
         return isMovie;
     });
 
-    console.log(`Found ${movieNodes.length} movie nodes`);
+    // Deep inspect the first few movie nodes
+    movieNodes.slice(0, 3).forEach(node => {
+        console.log('\n=== DETAILED MOVIE NODE INSPECTION ===');
+        console.log('Node structure:', JSON.stringify(node, null, 2));
+        console.log('Available fields:', Object.keys(node));
+        if (node.data) {
+            console.log('Data fields:', Object.keys(node.data));
+        }
+
+        // Look for any fields that might contain creator information
+        const allFields = Object.entries(node);
+        console.log('\nAll node fields:', allFields.map(([key, value]) => {
+            return {
+                key,
+                type: typeof value,
+                isArray: Array.isArray(value),
+                preview: value && typeof value === 'object' ? 
+                    (Array.isArray(value) ? `Array(${value.length})` : Object.keys(value)) : 
+                    String(value).substring(0, 100)
+            };
+        }));
+
+        // Look for potential creator information in any object fields
+        const objectFields = allFields.filter(([key, value]) => 
+            typeof value === 'object' && 
+            value !== null
+        );
+        if (objectFields.length > 0) {
+            console.log('\nDetailed object fields:', objectFields.map(([key, value]) => ({
+                key,
+                value: JSON.stringify(value, null, 2)
+            })));
+        }
+    });
+
+    console.log(`\nFound ${movieNodes.length} movie nodes`);
     
     // Determine the shelf for each movie node
     const nodeShelfMap = new Map();
