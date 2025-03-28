@@ -1,9 +1,8 @@
-// Enhanced NeoDB Data Adapter
-// This script converts the data from NeoDB API to the format expected by the visualization
-// It also reorganizes the graph to improve layout and add relationship information
+// Movie-only NeoDB Data Adapter
+// This script converts the data from NeoDB API to show only movie items
 
 function processNeoDBAData(rawData) {
-    console.log("Processing NeoDB data");
+    console.log("Processing NeoDB data for movie visualization");
     
     // Check if data is in the expected format
     if (!rawData || !rawData.graph_data) {
@@ -21,17 +20,56 @@ function processNeoDBAData(rawData) {
     const nodeIds = new Set();
     const creatorIds = new Set();
     
-    // Add nodes from the API data, excluding the user node
-    rawData.graph_data.nodes.forEach(node => {
-        // Skip user node - we'll create our own
-        if (node.id === 'user') return;
+    // Filter movie nodes from the original data
+    const movieNodes = rawData.graph_data.nodes.filter(node => {
+        // Include only movie type nodes
+        return node.type === 'movie' || 
+               node.category === 'movie' || 
+               (node.type === 'media' && node.category === 'movie');
+    });
+    
+    // Determine the shelf for each movie node
+    const nodeShelfMap = new Map();
+    
+    if (rawData.graph_data && rawData.graph_data.links) {
+        rawData.graph_data.links.forEach(link => {
+            // Check if this is a link between a shelf and a movie
+            if (link.source === 'shelf_wishlist' || 
+                link.source === 'shelf_progress' || 
+                link.source === 'shelf_complete' || 
+                link.source === 'shelf_dropped') {
+                
+                // Store shelf type for this target node
+                const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                const shelfType = link.source.replace('shelf_', '');
+                nodeShelfMap.set(targetId, shelfType);
+            }
+            // Also check the reverse direction
+            else if (link.target === 'shelf_wishlist' || 
+                     link.target === 'shelf_progress' || 
+                     link.target === 'shelf_complete' || 
+                     link.target === 'shelf_dropped') {
+                
+                // Store shelf type for this source node
+                const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                const shelfType = link.target.replace('shelf_', '');
+                nodeShelfMap.set(sourceId, shelfType);
+            }
+        });
+    }
+    
+    // Add movie nodes with shelf status to processed data
+    movieNodes.forEach(node => {
+        const nodeId = node.id;
+        const shelfStatus = nodeShelfMap.get(nodeId) || 'unknown';
         
         // Create a simplified node
         const processedNode = {
-            id: node.id,
-            name: node.name || "Unnamed",
-            type: node.type,
-            category: node.category || node.group
+            id: nodeId,
+            name: node.name || "Unnamed Movie",
+            type: 'movie',
+            shelf: shelfStatus,
+            data: node.data || {}
         };
         
         // Add rating if available
@@ -50,205 +88,53 @@ function processNeoDBAData(rawData) {
             processedNode.url = node.url;
         }
         
-        processedData.nodes.push(processedNode);
-        nodeIds.add(node.id);
-        
-        // Extract creator information
-        extractCreators(node, processedData, nodeIds, creatorIds);
-    });
-    
-    // Add links, excluding those to the user node
-    rawData.graph_data.links.forEach(link => {
-        // Skip links to/from user node - we'll handle those differently
-        if (link.source === 'user' || link.target === 'user') return;
-        
-        // Make sure both source and target exist
-        const sourceExists = nodeIds.has(typeof link.source === 'string' ? link.source : link.source.id);
-        const targetExists = nodeIds.has(typeof link.target === 'string' ? link.target : link.target.id);
-        
-        if (sourceExists && targetExists) {
-            processedData.links.push({
-                source: typeof link.source === 'string' ? link.source : link.source.id,
-                target: typeof link.target === 'string' ? link.target : link.target.id,
-                type: link.type || "linked"
-            });
+        // Add to processed data if not already added
+        if (!nodeIds.has(nodeId)) {
+            processedData.nodes.push(processedNode);
+            nodeIds.add(nodeId);
+            
+            // Extract creators for this movie
+            extractCreators(node, processedData, nodeIds, creatorIds);
         }
     });
     
-    // Create central organizational nodes
-    const organizationalNodes = [
-        { id: "books", name: "Books", type: "category" },
-        { id: "movies", name: "Movies", type: "category" },
-        { id: "tv", name: "TV Series", type: "category" },
-        { id: "music", name: "Music", type: "category" },
-        { id: "podcasts", name: "Podcasts", type: "category" }
-    ];
-    
-    // Add organizational nodes
-    organizationalNodes.forEach(node => {
-        if (!nodeIds.has(node.id)) {
-            processedData.nodes.push(node);
-            nodeIds.add(node.id);
-        }
-    });
-    
-    // Connect media nodes to their category nodes
-    processedData.nodes.forEach(node => {
-        if (node.type === 'media' || node.type === 'book' || node.type === 'movie' || 
-            node.type === 'tv' || node.type === 'music' || node.type === 'podcast') {
-            
-            let categoryId = null;
-            
-            // Determine which category this node belongs to
-            if (node.type === 'book' || node.category === 'book' || node.category === 'Edition') {
-                categoryId = "books";
-            } else if (node.type === 'movie' || node.category === 'movie') {
-                categoryId = "movies";
-            } else if (node.type === 'tv' || node.category === 'tv' || node.category === 'tvseries') {
-                categoryId = "tv";
-            } else if (node.type === 'music' || node.category === 'music' || node.category === 'album') {
-                categoryId = "music";
-            } else if (node.type === 'podcast' || node.category === 'podcast') {
-                categoryId = "podcasts";
-            }
-            
-            // Add link to category if we found a match
-            if (categoryId && nodeIds.has(categoryId)) {
-                processedData.links.push({
-                    source: categoryId,
-                    target: node.id,
-                    type: "contains"
-                });
-            }
-        }
-    });
-    
-    // Connect organizational nodes to each other to form a structure
-    for (let i = 0; i < organizationalNodes.length - 1; i++) {
-        processedData.links.push({
-            source: organizationalNodes[i].id,
-            target: organizationalNodes[i+1].id,
-            type: "related"
-        });
-    }
-    
-    // Connect first and last to form a circular structure
-    processedData.links.push({
-        source: organizationalNodes[0].id,
-        target: organizationalNodes[organizationalNodes.length-1].id,
-        type: "related"
-    });
-    
-    return processedData;
-    
-    // Helper function to extract creators from a node
+    // Helper function to extract creators from a movie node
     function extractCreators(node, processedData, nodeIds, creatorIds) {
-        // Only process nodes that might have creator information
-        if (node.type !== 'media' && 
-            node.type !== 'book' && 
-            node.type !== 'movie' && 
-            node.type !== 'tv' &&
-            node.type !== 'music' &&
-            node.type !== 'podcast' &&
-            node.type !== 'Edition') {
-            return;
-        }
-        
         const nodeData = node.data || {};
         
-        // Extract creators based on media type
+        // Extract creators for movies
         let creators = [];
         
-        // For books, extract authors and translators
-        if (node.type === 'book' || node.category === 'book' || node.type === 'Edition') {
-            // Look for authors
-            if (nodeData.authors) {
-                let authors = Array.isArray(nodeData.authors) ? nodeData.authors : [nodeData.authors];
-                authors.forEach(author => {
-                    const authorName = typeof author === 'string' ? author : (author.name || 'Unknown Author');
-                    const authorId = `author_${createIdFromName(authorName)}`;
-                    
-                    creators.push({
-                        id: authorId,
-                        name: authorName,
-                        type: 'creator',
-                        category: 'author',
-                        role: 'author'
-                    });
+        // Look for directors
+        if (nodeData.directors) {
+            let directors = Array.isArray(nodeData.directors) ? nodeData.directors : [nodeData.directors];
+            directors.forEach(director => {
+                const directorName = typeof director === 'string' ? director : (director.name || 'Unknown Director');
+                const directorId = `director_${createIdFromName(directorName)}`;
+                
+                creators.push({
+                    id: directorId,
+                    name: directorName,
+                    type: 'creator',
+                    role: 'director'
                 });
-            }
-            
-            // Look for translators
-            if (nodeData.translators) {
-                let translators = Array.isArray(nodeData.translators) ? nodeData.translators : [nodeData.translators];
-                translators.forEach(translator => {
-                    const translatorName = typeof translator === 'string' ? translator : (translator.name || 'Unknown Translator');
-                    const translatorId = `translator_${createIdFromName(translatorName)}`;
-                    
-                    creators.push({
-                        id: translatorId,
-                        name: translatorName,
-                        type: 'creator',
-                        category: 'translator',
-                        role: 'translator'
-                    });
-                });
-            }
+            });
         }
-        // For movies, extract directors and cast
-        else if (node.type === 'movie' || node.category === 'movie') {
-            // Look for directors
-            if (nodeData.directors) {
-                let directors = Array.isArray(nodeData.directors) ? nodeData.directors : [nodeData.directors];
-                directors.forEach(director => {
-                    const directorName = typeof director === 'string' ? director : (director.name || 'Unknown Director');
-                    const directorId = `director_${createIdFromName(directorName)}`;
-                    
-                    creators.push({
-                        id: directorId,
-                        name: directorName,
-                        type: 'creator',
-                        category: 'director',
-                        role: 'director'
-                    });
+        
+        // Look for cast (limit to main cast - first 5)
+        if (nodeData.cast) {
+            let cast = Array.isArray(nodeData.cast) ? nodeData.cast : [nodeData.cast];
+            cast.slice(0, 5).forEach(actor => {
+                const actorName = typeof actor === 'string' ? actor : (actor.name || 'Unknown Actor');
+                const actorId = `actor_${createIdFromName(actorName)}`;
+                
+                creators.push({
+                    id: actorId,
+                    name: actorName,
+                    type: 'creator',
+                    role: 'actor'
                 });
-            }
-            
-            // Look for cast (limit to main cast - first 5)
-            if (nodeData.cast) {
-                let cast = Array.isArray(nodeData.cast) ? nodeData.cast : [nodeData.cast];
-                cast.slice(0, 5).forEach(actor => {
-                    const actorName = typeof actor === 'string' ? actor : (actor.name || 'Unknown Actor');
-                    const actorId = `actor_${createIdFromName(actorName)}`;
-                    
-                    creators.push({
-                        id: actorId,
-                        name: actorName,
-                        type: 'creator',
-                        category: 'actor',
-                        role: 'actor'
-                    });
-                });
-            }
-        }
-        // For music, extract artists
-        else if (node.type === 'music' || node.category === 'music' || node.type === 'album') {
-            // Look for artists
-            if (nodeData.artists) {
-                let artists = Array.isArray(nodeData.artists) ? nodeData.artists : [nodeData.artists];
-                artists.forEach(artist => {
-                    const artistName = typeof artist === 'string' ? artist : (artist.name || 'Unknown Artist');
-                    const artistId = `artist_${createIdFromName(artistName)}`;
-                    
-                    creators.push({
-                        id: artistId,
-                        name: artistName,
-                        type: 'creator',
-                        category: 'artist',
-                        role: 'artist'
-                    });
-                });
-            }
+            });
         }
         
         // Add creator nodes and links
@@ -260,7 +146,7 @@ function processNeoDBAData(rawData) {
                 creatorIds.add(creator.id);
             }
             
-            // Connect creator to media item
+            // Connect creator to movie item
             processedData.links.push({
                 source: creator.id,
                 target: node.id,
@@ -268,6 +154,80 @@ function processNeoDBAData(rawData) {
             });
         });
     }
+    
+    // Create links between directors and actors who have worked together
+    const directorNodes = processedData.nodes.filter(node => node.role === 'director');
+    const actorNodes = processedData.nodes.filter(node => node.role === 'actor');
+    
+    // For each director, find all their movies and connect them to the actors in those movies
+    directorNodes.forEach(director => {
+        // Find all movies this director worked on
+        const directorMovies = processedData.links
+            .filter(link => link.source === director.id)
+            .map(link => link.target);
+        
+        // For each movie, find all actors
+        directorMovies.forEach(movieId => {
+            const movieActors = processedData.links
+                .filter(link => link.target === movieId && 
+                              processedData.nodes.find(n => n.id === link.source && n.role === 'actor'))
+                .map(link => link.source);
+            
+            // Connect director to actors
+            movieActors.forEach(actorId => {
+                // Check if link already exists
+                const linkExists = processedData.links.some(link => 
+                    (link.source === director.id && link.target === actorId) || 
+                    (link.source === actorId && link.target === director.id)
+                );
+                
+                if (!linkExists) {
+                    processedData.links.push({
+                        source: director.id,
+                        target: actorId,
+                        type: 'worked_with'
+                    });
+                }
+            });
+        });
+    });
+    
+    // Create links between actors who have appeared in the same movies
+    const processedPairs = new Set();
+    
+    actorNodes.forEach(actor1 => {
+        // Find all movies this actor appeared in
+        const actor1Movies = processedData.links
+            .filter(link => link.source === actor1.id)
+            .map(link => link.target);
+        
+        // For each actor's movie, find other actors in the same movie
+        actor1Movies.forEach(movieId => {
+            const coActors = processedData.links
+                .filter(link => link.target === movieId && 
+                              link.source !== actor1.id &&
+                              processedData.nodes.find(n => n.id === link.source && n.role === 'actor'))
+                .map(link => link.source);
+            
+            // Connect actor to co-actors (if not already connected)
+            coActors.forEach(actor2Id => {
+                // Create a unique pair ID (smaller ID first to avoid duplicates)
+                const pairId = [actor1.id, actor2Id].sort().join('_');
+                
+                if (!processedPairs.has(pairId)) {
+                    processedPairs.add(pairId);
+                    
+                    processedData.links.push({
+                        source: actor1.id,
+                        target: actor2Id,
+                        type: 'co_actor'
+                    });
+                }
+            });
+        });
+    });
+    
+    return processedData;
     
     // Helper function to create an ID from a name
     function createIdFromName(name) {
