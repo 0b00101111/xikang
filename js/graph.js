@@ -197,7 +197,7 @@ const graphVisualization = (function() {
             .style('background', '#ffffff')
             .style('overflow', 'visible');
         
-        // Create zoom behavior
+        // Create zoom behavior with initial zoom to fit
         zoom = d3.zoom()
             .scaleExtent([0.1, 10])
             .on('zoom', (event) => {
@@ -209,88 +209,102 @@ const graphVisualization = (function() {
         // Create main group
         g = svg.append('g');
         
-        // Create links
+        // Create links with reduced opacity for better performance
         link = g.append('g')
             .attr('class', 'links')
             .selectAll('line')
             .data(links)
             .join('line')
             .attr('stroke', colorUtils.PALETTE.fujiGray)
-            .attr('stroke-opacity', 0.3)
-            .attr('stroke-width', 0.5);
+            .attr('stroke-opacity', 0.2)
+            .attr('stroke-width', 0.3);
         
-        // Create nodes
+        // Create nodes with smaller radius
         node = g.append('g')
             .attr('class', 'nodes')
             .selectAll('circle')
             .data(nodes)
             .join('circle')
-            .attr('r', getNodeSize)
+            .attr('r', d => getNodeSize(d) * 0.8) // Smaller nodes
             .attr('fill', getNodeColor)
             .attr('stroke', '#fff')
-            .attr('stroke-width', 0.5)
+            .attr('stroke-width', 0.3)
             .call(d3.drag()
                 .on('start', dragstarted)
                 .on('drag', dragged)
                 .on('end', dragended));
         
-        // Create labels
+        // Create labels with initial low opacity
         nodeLabels = g.append('g')
             .attr('class', 'labels')
             .selectAll('text')
             .data(nodes)
             .join('text')
-            .attr('dx', 8)
+            .attr('dx', 6)
             .attr('dy', 3)
             .text(d => d.name)
             .attr('font-family', 'sans-serif')
-            .attr('font-size', d => d.type === 'creator' ? '10px' : '8px')
+            .attr('font-size', d => d.type === 'creator' ? '8px' : '6px')
             .attr('fill', '#333')
             .style('pointer-events', 'none')
-            .style('user-select', 'none');
+            .style('user-select', 'none')
+            .style('opacity', 0.5);
         
-        // Create force simulation
+        // Optimized force simulation
         simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(links)
                 .id(d => d.id)
-                .distance(d => {
-                    // Longer distance between movies and creators
-                    const source = d.source.type || 'unknown';
-                    const target = d.target.type || 'unknown';
-                    if (source !== target) return 100;
-                    return 50;
-                })
-                .strength(0.3))
+                .distance(30) // Shorter distances
+                .strength(0.1)) // Weaker links
             .force('charge', d3.forceManyBody()
-                .strength(d => d.type === 'creator' ? -100 : -30)
-                .distanceMax(300))
-            .force('x', d3.forceX().strength(0.05))
-            .force('y', d3.forceY().strength(0.05))
+                .strength(-10) // Weaker repulsion
+                .distanceMax(100)) // Shorter distance max
+            .force('x', d3.forceX().strength(0.02))
+            .force('y', d3.forceY().strength(0.02))
             .force('collision', d3.forceCollide()
-                .radius(d => getNodeSize(d) * 2)
-                .strength(0.7))
+                .radius(d => getNodeSize(d) * 1.2)
+                .strength(0.2))
+            .velocityDecay(0.6) // Faster stabilization
+            .alphaDecay(0.05) // Faster cooling
+            .alpha(0.3) // Lower initial energy
             .on('tick', () => {
-                link
-                    .attr('x1', d => d.source.x)
-                    .attr('y1', d => d.source.y)
-                    .attr('x2', d => d.target.x)
-                    .attr('y2', d => d.target.y);
+                // Batch DOM updates for better performance
+                requestAnimationFrame(() => {
+                    link
+                        .attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
 
-                node
-                    .attr('cx', d => d.x)
-                    .attr('cy', d => d.y);
+                    node
+                        .attr('cx', d => d.x)
+                        .attr('cy', d => d.y);
 
-                nodeLabels
-                    .attr('x', d => d.x)
-                    .attr('y', d => d.y);
-            })
-            .alphaDecay(0.02) // Slower decay for better layout
-            .velocityDecay(0.4); // More dampening
+                    nodeLabels
+                        .attr('x', d => d.x)
+                        .attr('y', d => d.y);
+                });
+            });
         
-        // Stop simulation after 3 seconds to prevent endless computation
+        // Stop simulation after 1 second
         setTimeout(() => {
-            if (simulation) simulation.stop();
-        }, 3000);
+            if (simulation) {
+                simulation.stop();
+                console.log('Simulation stopped');
+            }
+        }, 1000);
+
+        // Initial zoom to fit
+        const bounds = g.node().getBBox();
+        const fullWidth = bounds.width;
+        const fullHeight = bounds.height;
+        const scale = 0.8 / Math.max(fullWidth / width, fullHeight / height);
+        const transform = d3.zoomIdentity
+            .translate(width/2, height/2)
+            .scale(scale)
+            .translate(-bounds.x - fullWidth/2, -bounds.y - fullHeight/2);
+        
+        svg.call(zoom.transform, transform);
 
         // Add hover and click behaviors
         setupNodeInteractions();
