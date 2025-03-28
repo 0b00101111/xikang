@@ -5,46 +5,39 @@ name: Update NeoDB Data
 
 on:
   schedule:
-    # Run daily at midnight UTC
-    - cron: '0 0 * * *'
-  workflow_dispatch: # Allow manual triggering
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
-  fetch-data:
+  fetch-neodb-data:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v3
       
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
-      
-      - name: Create data directory
-        run: mkdir -p data
-      
-      - name: Fetch NeoDB data
-        env:
-          NEODB_USERNAME: ${{ secrets.NEODB_USERNAME }}
-        run: python scripts/fetch_neodb_data.py
-      
-      - name: Commit and push changes
-        run: |
-          git config --global user.name "GitHub Action Bot"
-          git config --global user.email "action@github.com"
-          
-          # Check if there are changes
-          if [[ -n $(git status -s data/) ]]; then
-            git add data/neodb-data.json
-            git commit -m "📊 Update NeoDB media data [skip ci]"
-            git push
-          else
-            echo "No changes to NeoDB data"
-          fi
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+        
+    - name: Fetch NeoDB data
+      env:
+        NEODB_USERNAME: ${{ secrets.NEODB_USERNAME }}
+        NEODB_CLIENT_ID: ${{ secrets.NEODB_CLIENT_ID }}
+        NEODB_CLIENT_SECRET: ${{ secrets.NEODB_CLIENT_SECRET }}
+        NEODB_ACCESS_TOKEN: ${{ secrets.NEODB_ACCESS_TOKEN }}
+      run: |
+        python scripts/fetch_neodb_data.py
+        
+    - name: Commit and push if changed
+      run: |
+        git config --global user.name 'GitHub Action'
+        git config --global user.email 'action@github.com'
+        git add data/neodb-data.json
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update NeoDB data" && git push)
