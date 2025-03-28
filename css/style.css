@@ -12,22 +12,20 @@
     --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     --panel-bg-color: #ffffff;
     
-    /* Node colors */
-    --movie-color: #6495ED;
-    --book-color: #FF7F50;
-    --tvseries-color: #9370DB;
-    --music-color: #20B2AA;
-    --podcast-color: #FFA07A;
-    
-    /* Creator colors */
-    --director-color: #FFD700;
-    --author-color: #CD5C5C;
-    --actor-color: #4682B4;
-    --musician-color: #2E8B57;
-    
-    /* Other node colors */
-    --genre-color: #9932CC;
-    --tag-color: #20B2AA;
+    --movie-color: #e5383b;
+    --book-color: #4361ee;
+    --tvseries-color: #7209b7;
+    --music-color: #f72585;
+    --podcast-color: #4cc9f0;
+    --game-color: #4f772d;
+    --director-color: #fb8500;
+    --author-color: #3a86ff;
+    --actor-color: #ff006e;
+    --musician-color: #8338ec;
+    --genre-color: #ffbe0b;
+    --tag-color: #06d6a0;
+    --primary-color: #118ab2;
+    --secondary-color: #073b4c;
 }
 
 * {
