@@ -1,37 +1,27 @@
-// Movie-only graph visualization using D3.js
-// This file implements a clean graph visualization just for movies
-
-// Create the graphVisualization object in the global scope
+// Movie-only graph visualization using D3.js with Canvas for better performance
 const graphVisualization = (function() {
     // Private variables
-    let svg, g, simulation, link, node, nodeLabels;
+    let canvas, context, simulation;
     let width, height, data;
     let nodes = [], links = [];
     let selectedNode = null;
-    let zoom;
+    let transform = d3.zoomIdentity;
+    let isDragging = false;
+    let draggedNode = null;
 
-    // Color scheme for movies
+    // Color scheme
     const movieColor = '#E07A5F';
     const directorColor = '#FB8500';
     const actorColor = '#FF006E';
 
     // Get node color based on type and shelf status
     function getNodeColor(d) {
-        console.log('Getting color for node:', d); // Debug log
         if (d.type === 'movie') {
             return colorUtils.calculateMovieColor(d, nodes, links);
         } else if (d.type === 'creator') {
             return colorUtils.getCreatorColor(d.id, d.role === 'director');
         }
-        return colorUtils.PALETTE.sumiInk3; // Default color
-    }
-
-    // Get node opacity based on shelf status
-    function getNodeOpacity(d) {
-        if (d.type === 'movie' && d.shelf === 'wishlist') {
-            return 0.6; // Slightly transparent for wishlist items
-        }
-        return 1.0; // Full opacity for all other nodes
+        return colorUtils.PALETTE.sumiInk3;
     }
 
     // Get node size based on type and importance
@@ -39,119 +29,182 @@ const graphVisualization = (function() {
         if (d.type === 'creator') {
             return d.role === 'director' ? 6 : 4;
         }
-        return 3; // Movies
+        return 3;
     }
 
-    // Drag behavior functions
-    function dragstarted(event, d) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
+    // Convert screen coordinates to graph coordinates
+    function screenToGraph(point) {
+        const transformed = transform.invert([point[0], point[1]]);
+        return transformed;
     }
 
-    function dragged(event, d) {
-        d.fx = event.x;
-        d.fy = event.y;
-    }
-
-    function dragended(event, d) {
-        if (!event.active) simulation.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
-    }
-
-    // Zoom control functions
-    function zoomIn() {}
-    function zoomOut() {}
-    function resetView() {}
-
-    // Filter nodes by category
-    function filterByCategory(category) {
-        if (!node || !nodeLabels || !link) return;
-
-        // Update node visibility
-        node.style('opacity', d => {
-            if (category === 'all') return getNodeOpacity(d);
-            if (d.type === 'movie') {
-                return d.shelf === category ? getNodeOpacity(d) : 0.1;
-            }
-            return getNodeOpacity(d);
-        });
-
-        // Update label visibility
-        nodeLabels.style('opacity', d => {
-            if (category === 'all') {
-                if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-                if (d.role === 'director') return 0.9;
-                return 0.7;
-            }
-            if (d.type === 'movie') {
-                return d.shelf === category ? 0.9 : 0.1;
-            }
-            return 0.7;
-        });
-
-        // Update link visibility
-        link.style('opacity', l => {
-            if (category === 'all') return 0.5;
-            const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
-            const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
-            
-            if (source.type === 'movie' && source.shelf === category) return 0.5;
-            if (target.type === 'movie' && target.shelf === category) return 0.5;
-            return 0.1;
-        });
-    }
-
-    // Toggle visibility of node types
-    function toggleNodeType(type) {
-        if (!node || !nodeLabels || !link) return;
-
-        const isVisible = node.style('opacity') === '1';
+    // Find node at coordinates
+    function findNodeAtCoordinates(x, y) {
+        const pos = screenToGraph([x, y]);
+        const radius = 5 / transform.k; // Adjust for zoom
         
-        // Update node visibility
-        node.style('opacity', d => {
-            if (d.type === type) return isVisible ? 0.1 : getNodeOpacity(d);
-            return getNodeOpacity(d);
-        });
-
-        // Update label visibility
-        nodeLabels.style('opacity', d => {
-            if (d.type === type) return isVisible ? 0.1 : 0.7;
-            if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-            if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-            if (d.role === 'director') return 0.9;
-            return 0.7;
-        });
-
-        // Update link visibility
-        link.style('opacity', l => {
-            const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
-            const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
-            
-            if (source.type === type || target.type === type) return isVisible ? 0.1 : 0.5;
-            return 0.5;
+        return simulation.nodes().find(node => {
+            const dx = node.x - pos[0];
+            const dy = node.y - pos[1];
+            return dx * dx + dy * dy < radius * radius;
         });
     }
 
-    // Handle window resizing
-    function resize() {
-        if (!svg || !g || !simulation) return;
+    // Handle zoom events
+    function handleZoom(event) {
+        transform = event.transform;
+        render();
+    }
 
-        // Get new dimensions
-        const container = document.getElementById('graph-container');
-        width = container.clientWidth;
-        height = container.clientHeight;
+    // Mouse event handlers
+    function handleMouseMove(event) {
+        const [x, y] = d3.pointer(event);
+        
+        if (isDragging && draggedNode) {
+            const pos = screenToGraph([x, y]);
+            draggedNode.fx = pos[0];
+            draggedNode.fy = pos[1];
+            simulation.alpha(0.3).restart();
+        } else {
+            const node = findNodeAtCoordinates(x, y);
+            canvas.node().style.cursor = node ? 'pointer' : 'default';
+            if (node) {
+                showTooltip(node, event);
+            } else {
+                hideTooltip();
+            }
+        }
+    }
 
-        // Update SVG dimensions
-        svg.attr('viewBox', [-width/2, -height/2, width, height]);
+    function handleMouseDown(event) {
+        const [x, y] = d3.pointer(event);
+        const node = findNodeAtCoordinates(x, y);
+        
+        if (node) {
+            isDragging = true;
+            draggedNode = node;
+            simulation.alphaTarget(0.3).restart();
+        }
+    }
 
-        // Update simulation
-        simulation
-            .force('center', d3.forceCenter(0, 0))
-            .alpha(0.3)
-            .restart();
+    function handleMouseUp() {
+        isDragging = false;
+        if (draggedNode) {
+            draggedNode.fx = null;
+            draggedNode.fy = null;
+            draggedNode = null;
+            simulation.alphaTarget(0);
+        }
+    }
+
+    function handleClick(event) {
+        const [x, y] = d3.pointer(event);
+        const node = findNodeAtCoordinates(x, y);
+        
+        if (node) {
+            selectedNode = selectedNode === node ? null : node;
+            render();
+        } else {
+            selectedNode = null;
+            render();
+        }
+    }
+
+    // Show tooltip
+    function showTooltip(node, event) {
+        const tooltip = d3.select('.node-tooltip');
+        let tooltipContent = `<strong>${node.name}</strong><br>`;
+        
+        if (node.type === 'movie') {
+            tooltipContent += `Type: Movie<br>Status: ${node.shelf || 'Unknown'}`;
+            if (node.rating) {
+                tooltipContent += `<br>Rating: ${node.rating}/10`;
+            }
+        } else if (node.type === 'creator') {
+            tooltipContent += `Role: ${node.role || 'Creator'}`;
+        }
+        
+        tooltip.html(tooltipContent)
+            .style('visibility', 'visible')
+            .style('left', (event.pageX + 10) + 'px')
+            .style('top', (event.pageY - 10) + 'px');
+    }
+
+    // Hide tooltip
+    function hideTooltip() {
+        d3.select('.node-tooltip').style('visibility', 'hidden');
+    }
+
+    // Main render function with culling
+    function render() {
+        // Clear canvas
+        context.save();
+        context.clearRect(0, 0, width, height);
+        context.translate(transform.x, transform.y);
+        context.scale(transform.k, transform.k);
+
+        // Get visible area in graph coordinates
+        const visible = {
+            x1: (-transform.x) / transform.k,
+            y1: (-transform.y) / transform.k,
+            x2: (width - transform.x) / transform.k,
+            y2: (height - transform.y) / transform.k,
+            margin: 50 // Add margin for smoother panning
+        };
+
+        // Draw links
+        context.strokeStyle = '#999';
+        context.lineWidth = 0.5 / transform.k;
+        context.beginPath();
+        
+        // Only draw visible links
+        links.forEach(link => {
+            if ((link.source.x >= visible.x1 - visible.margin && 
+                 link.source.x <= visible.x2 + visible.margin &&
+                 link.source.y >= visible.y1 - visible.margin && 
+                 link.source.y <= visible.y2 + visible.margin) ||
+                (link.target.x >= visible.x1 - visible.margin && 
+                 link.target.x <= visible.x2 + visible.margin &&
+                 link.target.y >= visible.y1 - visible.margin && 
+                 link.target.y <= visible.y2 + visible.margin)) {
+                context.moveTo(link.source.x, link.source.y);
+                context.lineTo(link.target.x, link.target.y);
+            }
+        });
+        context.stroke();
+
+        // Draw nodes
+        nodes.forEach(node => {
+            // Only draw if node is visible
+            if (node.x >= visible.x1 - visible.margin && 
+                node.x <= visible.x2 + visible.margin &&
+                node.y >= visible.y1 - visible.margin && 
+                node.y <= visible.y2 + visible.margin) {
+                
+                context.beginPath();
+                context.fillStyle = getNodeColor(node);
+                const nodeSize = getNodeSize(node);
+                context.arc(node.x, node.y, nodeSize / transform.k, 0, 2 * Math.PI);
+                context.fill();
+
+                // Draw selected node highlight
+                if (node === selectedNode) {
+                    context.strokeStyle = '#000';
+                    context.lineWidth = 2 / transform.k;
+                    context.stroke();
+                }
+
+                // Draw node labels if zoomed in enough
+                if (transform.k > 0.5) {
+                    context.fillStyle = '#000';
+                    context.font = `${10 / transform.k}px Arial`;
+                    context.textAlign = 'center';
+                    context.fillText(node.name, node.x, node.y + (15 / transform.k));
+                }
+            }
+        });
+
+        context.restore();
     }
 
     // Initialize the visualization
@@ -171,333 +224,69 @@ const graphVisualization = (function() {
         width = container.clientWidth;
         height = container.clientHeight;
         
-        // Create SVG
-        svg = d3.select(`#${containerId}`)
-            .append('svg')
-            .attr('width', '100%')
-            .attr('height', '100%')
-            .attr('viewBox', [-width/2, -height/2, width, height])
-            .style('background', '#ffffff');
+        // Create canvas
+        canvas = d3.select(`#${containerId}`)
+            .append('canvas')
+            .attr('width', width)
+            .attr('height', height)
+            .style('display', 'block');
         
-        // Create main group
-        g = svg.append('g');
-
-        // Create container groups for visual elements
-        const linkGroup = g.append('g').attr('class', 'links');
-        const nodeGroup = g.append('g').attr('class', 'nodes');
-        const labelGroup = g.append('g').attr('class', 'labels');
+        context = canvas.node().getContext('2d');
         
-        // Create static elements
-        link = linkGroup.selectAll('line')
-            .data(links)
-            .join('line')
-            .attr('stroke', colorUtils.PALETTE.fujiGray)
-            .attr('stroke-opacity', 0.2)
-            .attr('stroke-width', 0.3);
+        // Setup zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on('zoom', handleZoom);
         
-        node = nodeGroup.selectAll('circle')
-            .data(nodes)
-            .join('circle')
-            .attr('r', d => getNodeSize(d) * 0.8)
-            .attr('fill', getNodeColor)
-            .attr('stroke', '#fff')
-            .attr('stroke-width', 0.3);
+        canvas.call(zoom);
         
-        nodeLabels = labelGroup.selectAll('text')
-            .data(nodes)
-            .join('text')
-            .attr('dx', 6)
-            .attr('dy', 3)
-            .text(d => d.name)
-            .attr('font-family', 'sans-serif')
-            .attr('font-size', d => d.type === 'creator' ? '8px' : '6px')
-            .attr('fill', '#333')
-            .style('pointer-events', 'none')
-            .style('user-select', 'none')
-            .style('opacity', 0.5);
-
-        // Fixed zoom level - no dynamic zooming
-        const fixedScale = 0.5;
-        g.attr('transform', `scale(${fixedScale})`);
+        // Setup mouse events
+        canvas
+            .on('mousemove', handleMouseMove)
+            .on('mousedown', handleMouseDown)
+            .on('mouseup', handleMouseUp)
+            .on('click', handleClick);
         
-        // Optimized force simulation with reduced complexity
+        // Optimized force simulation
         simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(links)
                 .id(d => d.id)
-                .distance(d => {
-                    // Shorter distances for actor links to reduce spread
-                    if (d.type === 'acted_in') return 20;
-                    return 30;
-                })
+                .distance(d => d.type === 'acted_in' ? 20 : 30)
                 .strength(0.3))
             .force('charge', d3.forceManyBody()
                 .strength(d => d.type === 'movie' ? -30 : -10)
                 .distanceMax(150))
-            .force('x', d3.forceX().strength(0.1))
-            .force('y', d3.forceY().strength(0.1))
             .force('collision', d3.forceCollide()
                 .radius(d => getNodeSize(d) * 1.5)
                 .strength(0.5))
-            .velocityDecay(0.7) // Faster stabilization
-            .alphaDecay(0.1) // Much faster cooling
-            .alpha(0.5) // Higher initial energy
-            .on('tick', () => {
-                // Viewport culling with larger margin for smoother panning
-                const scale = fixedScale;
-                const margin = 200;
-                const visibleX = [-width/(2*scale) - margin, width/(2*scale) + margin];
-                const visibleY = [-height/(2*scale) - margin, height/(2*scale) + margin];
-
-                // Batch updates for better performance
-                const visibleNodes = nodes.filter(d => {
-                    d.visible = (
-                        d.x >= visibleX[0] && d.x <= visibleX[1] &&
-                        d.y >= visibleY[0] && d.y <= visibleY[1]
-                    );
-                    return d.visible;
-                });
-
-                const visibleLinks = links.filter(d => 
-                    d.source.visible && d.target.visible
-                );
-
-                // Only update visible elements
-                requestAnimationFrame(() => {
-                    // Update links
-                    link.attr('visibility', d => 
-                        (d.source.visible && d.target.visible) ? 'visible' : 'hidden'
-                    );
-                    
-                    // Batch update visible links
-                    if (visibleLinks.length > 0) {
-                        link.filter(d => d.source.visible && d.target.visible)
-                            .attr('x1', d => d.source.x)
-                            .attr('y1', d => d.source.y)
-                            .attr('x2', d => d.target.x)
-                            .attr('y2', d => d.target.y);
-                    }
-
-                    // Batch update visible nodes
-                    if (visibleNodes.length > 0) {
-                        node.attr('visibility', d => d.visible ? 'visible' : 'hidden');
-                        node.filter(d => d.visible)
-                            .attr('cx', d => d.x)
-                            .attr('cy', d => d.y);
-
-                        nodeLabels.attr('visibility', d => d.visible ? 'visible' : 'hidden');
-                        nodeLabels.filter(d => d.visible)
-                            .attr('x', d => d.x)
-                            .attr('y', d => d.y);
-                    }
-                });
-            });
+            .velocityDecay(0.7)
+            .alphaDecay(0.1)
+            .alpha(0.5)
+            .on('tick', render);
         
-        // Stop simulation after 1 second
+        // Stop simulation after 3 seconds
         setTimeout(() => {
-            if (simulation) {
-                simulation.stop();
-                console.log('Simulation stopped');
-            }
-        }, 1000);
-
-        // Add hover and click behaviors
-        setupNodeInteractions();
+            simulation.stop();
+            console.log('Simulation stopped');
+        }, 3000);
     }
 
-    // Setup node interactions (hover and click)
-    function setupNodeInteractions() {
-        if (!node || !nodeLabels || !link) return;
-
-        // Add hover behavior
-        node.on('mouseover', handleNodeMouseOver)
-           .on('mousemove', handleNodeMouseMove)
-           .on('mouseout', handleNodeMouseOut)
-           .on('click', handleNodeClick);
-
-        // Clear selection when clicking on background
-        svg.on('click', handleBackgroundClick);
-    }
-
-    // Handle node mouse over
-    function handleNodeMouseOver(event, d) {
-        // Show tooltip with node details
-        const tooltip = d3.select('.node-tooltip');
-        let tooltipContent = `<strong>${d.name}</strong><br>`;
+    // Handle window resizing
+    function resize() {
+        const container = document.getElementById('graph-container');
+        width = container.clientWidth;
+        height = container.clientHeight;
         
-        if (d.type === 'movie') {
-            tooltipContent += `Type: Movie<br>Status: ${d.shelf || 'Unknown'}`;
-            if (d.rating) {
-                tooltipContent += `<br>Rating: ${d.rating}/10`;
-            }
-        } else if (d.type === 'creator') {
-            tooltipContent += `Role: ${d.role || 'Creator'}`;
-            
-            // Find connected movies
-            const connectedMovies = links
-                .filter(link => 
-                    (typeof link.source === 'object' ? link.source.id === d.id : link.source === d.id) && 
-                    nodes.find(n => n.id === (typeof link.target === 'object' ? link.target.id : link.target) && n.type === 'movie')
-                )
-                .map(link => typeof link.target === 'object' ? link.target.id : link.target)
-                .map(movieId => nodes.find(n => n.id === movieId))
-                .filter(Boolean);
-            
-            if (connectedMovies.length > 0) {
-                tooltipContent += `<br><br>Movies:`;
-                connectedMovies.forEach(movie => {
-                    tooltipContent += `<br>• ${movie.name}`;
-                });
-            }
-        }
+        canvas
+            .attr('width', width)
+            .attr('height', height);
         
-        tooltip.html(tooltipContent)
-            .style('visibility', 'visible')
-            .style('left', (event.pageX + 10) + 'px')
-            .style('top', (event.pageY - 10) + 'px');
-        
-        highlightConnections(d);
-    }
-
-    // Handle node mouse move
-    function handleNodeMouseMove(event) {
-        const tooltip = d3.select('.node-tooltip');
-        tooltip.style('left', (event.pageX + 10) + 'px')
-               .style('top', (event.pageY - 10) + 'px');
-    }
-
-    // Handle node mouse out
-    function handleNodeMouseOut() {
-        const tooltip = d3.select('.node-tooltip');
-        tooltip.style('visibility', 'hidden');
-        
-        if (!selectedNode) {
-            resetHighlighting();
-        }
-    }
-
-    // Handle node click
-    function handleNodeClick(event, d) {
-        event.stopPropagation();
-        
-        if (selectedNode === d) {
-            selectedNode = null;
-            resetHighlighting();
-        } else {
-            selectedNode = d;
-            highlightConnections(d, true);
-        }
-    }
-
-    // Handle background click
-    function handleBackgroundClick(event) {
-        if (event.target === this && selectedNode) {
-            selectedNode = null;
-            resetHighlighting();
-        }
-    }
-
-    // Highlight connections for a node
-    function highlightConnections(d, isClick = false) {
-        // Highlight connected links
-        link.style('stroke', l => {
-            const source = typeof l.source === 'object' ? l.source.id : l.source;
-            const target = typeof l.target === 'object' ? l.target.id : l.target;
-            return (source === d.id || target === d.id) ? '#666' : '#e0e0e0';
-        })
-        .style('stroke-opacity', l => {
-            const source = typeof l.source === 'object' ? l.source.id : l.source;
-            const target = typeof l.target === 'object' ? l.target.id : l.target;
-            return (source === d.id || target === d.id) ? 0.9 : 0.1;
-        })
-        .style('stroke-width', l => {
-            const source = typeof l.source === 'object' ? l.source.id : l.source;
-            const target = typeof l.target === 'object' ? l.target.id : l.target;
-            if (source === d.id || target === d.id) {
-                if (l.type === 'director' || l.type === 'actor') {
-                    return 2;
-                } else if (l.type === 'worked_with') {
-                    return 1.5;
-                } else if (l.type === 'co_actor') {
-                    return 1;
-                }
-                return 1.5;
-            }
-            return 0.5;
-        });
-        
-        // Highlight connected nodes
-        node.style('opacity', n => {
-            const isConnected = links.some(l => {
-                const source = typeof l.source === 'object' ? l.source.id : l.source;
-                const target = typeof l.target === 'object' ? l.target.id : l.target;
-                return (source === d.id && target === n.id) || (target === d.id && source === n.id);
-            });
-            
-            if (isClick && n.id === d.id) {
-                d3.select(this).style('stroke', '#000').style('stroke-width', 2);
-            }
-            
-            if (n.id === d.id) return 1;
-            if (isConnected) {
-                if (n.type === 'movie' && n.shelf === 'progress') return 0.7;
-                return 1;
-            }
-            return 0.2;
-        });
-        
-        // Highlight relevant labels
-        nodeLabels.style('opacity', n => {
-            const isConnected = links.some(l => {
-                const source = typeof l.source === 'object' ? l.source.id : l.source;
-                const target = typeof l.target === 'object' ? l.target.id : l.target;
-                return (source === d.id && target === n.id) || (target === d.id && source === n.id);
-            });
-            
-            if (n.id === d.id) return 1;
-            if (isConnected) {
-                if (n.type === 'movie') return 0.9;
-                if (n.role === 'director') return 1;
-                return 0.9;
-            }
-            return 0.1;
-        });
-    }
-
-    // Reset highlighting
-    function resetHighlighting() {
-        link.style('stroke', '#e0e0e0')
-            .style('stroke-opacity', 0.5)
-            .style('stroke-width', d => {
-                if (d.type === 'director' || d.type === 'actor') {
-                    return 1.5;
-                } else if (d.type === 'worked_with') {
-                    return 1;
-                } else if (d.type === 'co_actor') {
-                    return 0.5;
-                }
-                return 1;
-            });
-        
-        node.style('opacity', getNodeOpacity)
-            .style('stroke', '#fff')
-            .style('stroke-width', 1);
-        
-        nodeLabels.style('opacity', d => {
-            if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-            if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-            if (d.role === 'director') return 0.9;
-            return 0.7;
-        });
+        render();
     }
 
     // Return the public API
     return {
         init,
-        zoomIn,
-        zoomOut,
-        resetView,
-        filterByCategory,
-        toggleNodeType,
         resize
     };
 })();

@@ -19,6 +19,21 @@
             background-color: #ffffff;
         }
         
+        /* Tooltip styles */
+        .node-tooltip {
+            position: absolute;
+            visibility: hidden;
+            background: white;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            pointer-events: none;
+            font-size: 12px;
+            max-width: 200px;
+            z-index: 1000;
+        }
+        
         /* Minimal loading indicator */
         #loading {
             position: fixed;
@@ -83,6 +98,9 @@
     <div id="loading">
         <div class="spinner"></div>
     </div>
+
+    <!-- Tooltip container -->
+    <div class="node-tooltip"></div>
 
     <!-- Load scripts -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
