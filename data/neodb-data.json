@@ -18,5 +18,114 @@
     "avatar": "https://neodb.social/media/profile_images/2024/8/12/iqk2jzmSDBeYlE-jyrEDPuG7JZc.png",
     "username": "shuang",
     "roles": []
-  }
+  },
+  "collections": {
+    "data": [],
+    "pages": 0,
+    "count": 0
+  },
+  "favorites": [
+    {
+      "id": "428230094610012712",
+      "uri": "https://neodb.social/@roseoftime@neodb.social/posts/428230094610012712/",
+      "created_at": "2025-03-27T23:33:30.611Z",
+      "account": {
+        "id": "122",
+        "username": "roseoftime",
+        "acct": "roseoftime@neodb.social",
+        "url": "https://neodb.social/@roseoftime/",
+        "display_name": "时间的玫瑰",
+        "note": "<p>无双</p>",
+        "avatar": "https://neodb.social/media/profile_images/2024/2/25/IblVO3KZ9WauWUST5CAQqSijTq4.jpg",
+        "avatar_static": "https://neodb.social/media/profile_images/2024/2/25/IblVO3KZ9WauWUST5CAQqSijTq4.jpg",
+        "header": "https://neodb.social/static/img/missing.5fa23ea9f65e.png",
+        "header_static": "https://neodb.social/static/img/missing.5fa23ea9f65e.png",
+        "locked": false,
+        "fields": [],
+        "emojis": [],
+        "bot": false,
+        "group": false,
+        "discoverable": true,
+        "indexable": true,
+        "moved": null,
+        "suspended": false,
+        "limited": false,
+        "created_at": "2023-12-09T00:00:00.000Z",
+        "last_status_at": "2025-03-20",
+        "statuses_count": 16549,
+        "followers_count": 517,
+        "following_count": 40,
+        "source": null
+      },
+      "content": "<p>读过 <a href=\"https://neodb.social/~neodb~/book/7SpJYRIDa2kP7rarAm1EGB\" rel=\"nofollow\">人类简史</a> 🌕🌕🌕🌕🌗  <br>用漫画展现了想象的秩序如何引导文明的进展。<br>翻译一下：社会进步从来靠歧视和压迫其他人。<br></p>",
+      "visibility": "public",
+      "sensitive": false,
+      "spoiler_text": "",
+      "media_attachments": [],
+      "mentions": [],
+      "tags": [],
+      "emojis": [],
+      "reblogs_count": 0,
+      "favourites_count": 1,
+      "replies_count": 0,
+      "url": "https://neodb.social/@roseoftime/posts/428230094610012712/",
+      "in_reply_to_id": null,
+      "in_reply_to_account_id": null,
+      "reblog": null,
+      "poll": null,
+      "card": null,
+      "language": "zh",
+      "text": "<p>读过 <a href=\"https://neodb.social/~neodb~/book/7SpJYRIDa2kP7rarAm1EGB\" rel=\"nofollow\">人类简史</a> 🌕🌕🌕🌕🌗  <br>用漫画展现了想象的秩序如何引导文明的进展。<br>翻译一下：社会进步从来靠歧视和压迫其他人。<br></p>",
+      "edited_at": "2025-03-27T23:33:30.619Z",
+      "favourited": true,
+      "reblogged": false,
+      "muted": false,
+      "bookmarked": false,
+      "pinned": false,
+      "ext_neodb": {
+        "tag": [
+          {
+            "href": "https://neodb.social/book/7SpJYRIDa2kP7rarAm1EGB",
+            "name": "人类简史",
+            "type": "Edition",
+            "image": "https://neodb.social/m/book/2022/04/247e7b9354-f58f-4bd8-af5b-e80c90731706.jpg"
+          }
+        ],
+        "relatedWith": [
+          {
+            "id": "https://neodb.social/p/6NxNC6f9JEmAiuWcpWheps",
+            "href": "https://neodb.social/p/6NxNC6f9JEmAiuWcpWheps",
+            "type": "Status",
+            "status": "complete",
+            "updated": "2025-03-27T23:33:30.619047+00:00",
+            "published": "2025-03-27T23:33:30.611525+00:00",
+            "attributedTo": "https://neodb.social/@roseoftime@neodb.social/",
+            "withRegardTo": "https://neodb.social/book/7SpJYRIDa2kP7rarAm1EGB"
+          },
+          {
+            "id": "https://neodb.social/p/6HKef5MhkxgJQxegQOzzMP",
+            "href": "https://neodb.social/p/6HKef5MhkxgJQxegQOzzMP",
+            "type": "Comment",
+            "content": "用漫画展现了想象的秩序如何引导文明的进展。\r\n翻译一下：社会进步从来靠歧视和压迫其他人。",
+            "updated": "2025-03-27T23:33:30.638040+00:00",
+            "published": "2025-03-27T23:33:30.611525+00:00",
+            "attributedTo": "https://neodb.social/@roseoftime@neodb.social/",
+            "withRegardTo": "https://neodb.social/book/7SpJYRIDa2kP7rarAm1EGB"
+          },
+          {
+            "id": "https://neodb.social/p/6fRYk0J800rHJiO6O6ohEX",
+            "best": 10,
+            "href": "https://neodb.social/p/6fRYk0J800rHJiO6O6ohEX",
+            "type": "Rating",
+            "value": 9,
+            "worst": 1,
+            "updated": "2025-03-27T23:33:30.645323+00:00",
+            "published": "2025-03-27T23:33:30.643430+00:00",
+            "attributedTo": "https://neodb.social/@roseoftime@neodb.social/",
+            "withRegardTo": "https://neodb.social/book/7SpJYRIDa2kP7rarAm1EGB"
+          }
+        ]
+      }
+    }
+  ]
 }
