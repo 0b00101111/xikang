@@ -95,20 +95,27 @@ const graphVisualization = (function() {
                 .on('drag', dragged)
                 .on('end', dragended));
         
-        // Create minimal labels (only for important nodes)
-        nodeLabels = g.append('g')
-            .selectAll('text')
-            .data(nodes.filter(d => d.type === 'user' || d.type === 'tag' || d.type === 'shelf'))
-            .enter().append('text')
-            .attr('dx', 6)
-            .attr('dy', 3)
-            .text(d => d.name)
-            .attr('font-family', 'sans-serif')
-            .attr('font-size', d => d.type === 'user' ? '10px' : '8px')
-            .attr('fill', '#555')
-            .style('pointer-events', 'none')
-            .style('user-select', 'none')
-            .style('opacity', 0.8);
+        // Create labels for all nodes, not just category nodes
+nodeLabels = g.append('g')
+    .selectAll('text')
+    .data(nodes)  // Use all nodes instead of filtering
+    .enter().append('text')
+    .attr('dx', 6)
+    .attr('dy', 3)
+    .text(d => d.name)
+    .attr('font-family', 'sans-serif')
+    .attr('font-size', d => {
+        if (d.type === 'user' || d.type === 'category') return '10px';
+        return '8px';  // Smaller font for media items
+    })
+    .attr('fill', '#555')
+    .style('pointer-events', 'none')
+    .style('user-select', 'none')
+    // Show labels based on node type
+    .style('opacity', d => {
+        if (d.type === 'user' || d.type === 'category') return 0.9;
+        return 0.7;  // Slightly less visible for media items
+    });
         
         // Create force simulation with more space
         simulation = d3.forceSimulation(nodes)
