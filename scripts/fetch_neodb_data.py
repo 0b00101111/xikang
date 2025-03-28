@@ -4,63 +4,117 @@ import os
 import sys
 import time
 
-def fetch_paginated_data(url, headers, params=None):
-    """Fetch all pages of data from the API"""
+def _process_movie_item(item):
+    """Process a movie item and return its node and links data"""
+    movie_id = f"movie_{item['id']}"
+    movie_node = {
+        "id": movie_id,
+        "name": item.get('title', ''),
+        "type": "movie",
+        "category": "movie",
+        "data": {
+            "rating": item.get('rating', {}).get('value'),
+            "url": item.get('url', '')
+        }
+    }
+    
+    links = []
+    nodes = [movie_node]
+    
+    # Process shelf status
+    shelf = item.get('status', 'unknown')
+    if shelf:
+        shelf_id = f"shelf_{shelf}"
+        links.append({
+            "source": movie_id,
+            "target": shelf_id,
+            "type": "in_shelf"
+        })
+    
+    # Process directors
+    directors = item.get('directors', [])
+    for director in directors:
+        director_id = f"person_{director['id']}"
+        nodes.append({
+            "id": director_id,
+            "name": director.get('name', ''),
+            "type": "person"
+        })
+        links.append({
+            "source": director_id,
+            "target": movie_id,
+            "type": "directed"
+        })
+    
+    # Process actors (limit to top 5)
+    actors = item.get('actors', [])[:5]  # Limit to top 5 actors
+    for actor in actors:
+        actor_id = f"person_{actor['id']}"
+        nodes.append({
+            "id": actor_id,
+            "name": actor.get('name', ''),
+            "type": "person"
+        })
+        links.append({
+            "source": actor_id,
+            "target": movie_id,
+            "type": "acted_in"
+        })
+    
+    # Process playwrights
+    playwrights = item.get('playwrights', [])
+    for playwright in playwrights:
+        playwright_id = f"person_{playwright['id']}"
+        nodes.append({
+            "id": playwright_id,
+            "name": playwright.get('name', ''),
+            "type": "person"
+        })
+        links.append({
+            "source": playwright_id,
+            "target": movie_id,
+            "type": "wrote"
+        })
+    
+    return nodes, links
+
+def fetch_paginated_data(api_url, headers, params=None):
+    """Fetch paginated data from the API"""
     if params is None:
         params = {}
     
     all_items = []
     page = 1
-    items_per_page = 20  # NeoDB seems to use 20 as default page size
+    page_size = 50  # Default page size
     
     while True:
-        current_params = {**params, 'page': page}  # Don't override the default per_page
-        print(f"Fetching {url} with params: {current_params}")
-        response = requests.get(url, headers=headers, params=current_params)
+        current_params = {
+            **params,
+            'page': page,
+            'page_size': page_size
+        }
         
+        response = requests.get(api_url, headers=headers, params=current_params)
         if response.status_code != 200:
-            print(f"Failed to fetch page {page}: {response.text[:200]}")
+            print(f"Error fetching page {page}: {response.status_code}")
             break
             
         data = response.json()
-        
-        # Debug: Print response structure for the first page
-        if page == 1:
-            print("First page response structure:")
-            print(json.dumps({k: v for k, v in data.items() if k != 'data'}, indent=2))
-            if data.get('data'):
-                print("Sample items structure:")
-                for i, item in enumerate(data['data'][:3]):  # Show first 3 items
-                    print(f"\nItem {i+1}:")
-                    item_type = item.get('item', {}).get('type', 'unknown')
-                    item_title = item.get('item', {}).get('title', 'untitled')
-                    print(f"Type: {item_type}, Title: {item_title}")
-        
         items = data.get('data', [])
         
-        if not items:
-            print("No more items found")
-            break
-            
-        # Filter for media items if we're not using category parameter
-        if 'category' not in params:
-            original_count = len(items)
-            items = [item for item in items if _is_movie_item(item)]
-            print(f"Filtered from {original_count} items to {len(items)} media items")
+        # Filter for movie items
+        movie_items = [item for item in items if _is_movie_item(item)]
+        print(f"Filtered from {len(items)} items to {len(movie_items)} media items")
         
-        all_items.extend(items)
-        current_count = len(all_items)
+        all_items.extend(movie_items)
+        print(f"Fetched page {page} ({len(movie_items)} items, total so far: {len(all_items)})")
         
-        # If we got less than items_per_page, we're on the last page
-        has_more = len(data.get('data', [])) >= items_per_page  # Check original data length
-        print(f"Fetched page {page} ({len(items)} items, total so far: {current_count})")
-        
-        if not has_more:
+        # Check if we've reached the last page
+        if len(items) < page_size:
             print("Last page reached (got fewer items than page size)")
             break
             
         page += 1
-        time.sleep(0.5)  # Rate limiting
     
     print(f"Finished fetching all pages. Total items: {len(all_items)}")
     return all_items
