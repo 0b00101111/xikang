@@ -1,6 +1,7 @@
 // Movie-only graph visualization using D3.js
 // This file implements a clean graph visualization just for movies
 
+// Create the graphVisualization object in the global scope
 const graphVisualization = (function() {
     // Private variables
     let svg, g, simulation, link, node, nodeLabels;
@@ -472,118 +473,127 @@ const graphVisualization = (function() {
                 
                 nodeLabels.style('opacity', d => {
                     if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                    if (d.type === 'movie' && d.shelf === 'dropped') return 0
-
-    // Drag behavior functions
-    function dragstarted(event, d) {
-        if (!event.active) simulation.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
-    }
-
-    function dragged(event, d) {
-        d.fx = event.x;
-        d.fy = event.y;
-    }
-
-    function dragended(event, d) {
-        if (!event.active) simulation.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
-    }
-
-    // Zoom control functions
-    function zoomIn() {
-        svg.transition()
-            .duration(750)
-            .call(zoom.scaleBy, 1.3);
-    }
-
-    function zoomOut() {
-        svg.transition()
-            .duration(750)
-            .call(zoom.scaleBy, 0.7);
-    }
-
-    function resetView() {
-        svg.transition()
-            .duration(750)
-            .call(zoom.transform, d3.zoomIdentity);
-    }
-
-    // Filter nodes by category
-    function filterByCategory(category) {
-        // Update node visibility
-        node.style('opacity', d => {
-            if (category === 'all') return getNodeOpacity(d);
-            if (d.type === 'movie') {
-                return d.shelf === category ? getNodeOpacity(d) : 0.1;
+                    if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
+                    if (d.role === 'director') return 0.9;
+                    return 0.7;
+                });
             }
-            return getNodeOpacity(d);
         });
+        
+        // Drag behavior functions
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
 
-        // Update label visibility
-        nodeLabels.style('opacity', d => {
-            if (category === 'all') {
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        // Zoom control functions
+        function zoomIn() {
+            svg.transition()
+                .duration(750)
+                .call(zoom.scaleBy, 1.3);
+        }
+
+        function zoomOut() {
+            svg.transition()
+                .duration(750)
+                .call(zoom.scaleBy, 0.7);
+        }
+
+        function resetView() {
+            svg.transition()
+                .duration(750)
+                .call(zoom.transform, d3.zoomIdentity);
+        }
+
+        // Filter nodes by category
+        function filterByCategory(category) {
+            // Update node visibility
+            node.style('opacity', d => {
+                if (category === 'all') return getNodeOpacity(d);
+                if (d.type === 'movie') {
+                    return d.shelf === category ? getNodeOpacity(d) : 0.1;
+                }
+                return getNodeOpacity(d);
+            });
+
+            // Update label visibility
+            nodeLabels.style('opacity', d => {
+                if (category === 'all') {
+                    if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
+                    if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
+                    if (d.role === 'director') return 0.9;
+                    return 0.7;
+                }
+                if (d.type === 'movie') {
+                    return d.shelf === category ? 0.9 : 0.1;
+                }
+                return 0.7;
+            });
+
+            // Update link visibility
+            link.style('opacity', l => {
+                if (category === 'all') return 0.5;
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                
+                if (source.type === 'movie' && source.shelf === category) return 0.5;
+                if (target.type === 'movie' && target.shelf === category) return 0.5;
+                return 0.1;
+            });
+        }
+
+        // Toggle visibility of node types
+        function toggleNodeType(type) {
+            const isVisible = node.style('opacity') === '1';
+            
+            // Update node visibility
+            node.style('opacity', d => {
+                if (d.type === type) return isVisible ? 0.1 : getNodeOpacity(d);
+                return getNodeOpacity(d);
+            });
+
+            // Update label visibility
+            nodeLabels.style('opacity', d => {
+                if (d.type === type) return isVisible ? 0.1 : 0.7;
                 if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
                 if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
                 if (d.role === 'director') return 0.9;
                 return 0.7;
-            }
-            if (d.type === 'movie') {
-                return d.shelf === category ? 0.9 : 0.1;
-            }
-            return 0.7;
-        });
+            });
 
-        // Update link visibility
-        link.style('opacity', l => {
-            if (category === 'all') return 0.5;
-            const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
-            const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
-            
-            if (source.type === 'movie' && source.shelf === category) return 0.5;
-            if (target.type === 'movie' && target.shelf === category) return 0.5;
-            return 0.1;
-        });
+            // Update link visibility
+            link.style('opacity', l => {
+                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+                
+                if (source.type === type || target.type === type) return isVisible ? 0.1 : 0.5;
+                return 0.5;
+            });
+        }
+
+        // Return the public API
+        return {
+            init,
+            zoomIn,
+            zoomOut,
+            resetView,
+            filterByCategory,
+            toggleNodeType
+        };
     }
-
-    // Toggle visibility of node types
-    function toggleNodeType(type) {
-        const isVisible = node.style('opacity') === '1';
-        
-        // Update node visibility
-        node.style('opacity', d => {
-            if (d.type === type) return isVisible ? 0.1 : getNodeOpacity(d);
-            return getNodeOpacity(d);
-        });
-
-        // Update label visibility
-        nodeLabels.style('opacity', d => {
-            if (d.type === type) return isVisible ? 0.1 : 0.7;
-            if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-            if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-            if (d.role === 'director') return 0.9;
-            return 0.7;
-        });
-
-        // Update link visibility
-        link.style('opacity', l => {
-            const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
-            const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
-            
-            if (source.type === type || target.type === type) return isVisible ? 0.1 : 0.5;
-            return 0.5;
-        });
-    }
-
-    // Return the public API
-    return {
-        init,
-        zoomIn,
-        zoomOut,
-        resetView,
-        filterByCategory,
-        toggleNodeType
-    };
 })();
+
+// Make graphVisualization available globally
+window.graphVisualization = graphVisualization;
