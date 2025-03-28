@@ -313,38 +313,57 @@ const graphVisualization = (function() {
                 const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
                 const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
                 
-                if (!source || !target) return 100;
+                if (!source || !target) return 200;
                 
                 if (d.type === 'director' || d.type === 'actor') {
-                    return 150; // Increase distance between movies and creators
+                    return 300; // Much larger distance between movies and creators
                 } else if (d.type === 'worked_with') {
-                    return 200; // Increase distance between collaborators
+                    return 400; // Much larger distance between collaborators
                 } else if (d.type === 'co_actor') {
-                    return 180; // Increase distance between co-actors
+                    return 350; // Much larger distance between co-actors
                 }
-                return 100; // Default distance
+                return 200; // Larger default distance
             }))
-            // Strong repulsive force
+            // Very strong repulsive force
             .force('charge', d3.forceManyBody()
                 .strength(d => {
-                    if (d.role === 'director') return -1000;
-                    if (d.role === 'actor') return -800;
-                    return -500; // Movies
+                    if (d.role === 'director') return -3000;
+                    if (d.role === 'actor') return -2000;
+                    return -1500; // Movies
                 })
-                .distanceMax(500) // Limit the maximum distance of repulsion
+                .distanceMax(1000) // Increased maximum distance of repulsion
+                .theta(0.5) // More accurate force calculations
             )
-            // Very weak center gravity
-            .force('x', d3.forceX().strength(0.05))
-            .force('y', d3.forceY().strength(0.05))
-            // Collision prevention with larger radius
-            .force('collision', d3.forceCollide().radius(d => getNodeSize(d) * 3))
+            // Remove center gravity forces
+            //.force('x', d3.forceX().strength(0.05))
+            //.force('y', d3.forceY().strength(0.05))
+            // Add radial force to spread nodes out
+            .force('radial', d3.forceRadial(
+                d => {
+                    if (d.role === 'director') return height/3;
+                    if (d.role === 'actor') return height/2.5;
+                    return height/4;
+                },
+                width/2,
+                height/2
+            ).strength(0.3))
+            // Strong collision prevention
+            .force('collision', d3.forceCollide().radius(d => getNodeSize(d) * 5).strength(1))
             // Add alpha settings for better stabilization
             .alpha(1)
-            .alphaDecay(0.01) // Slower cooling
-            .alphaMin(0.001);
+            .alphaDecay(0.003) // Even slower cooling
+            .alphaMin(0.001)
+            .velocityDecay(0.4); // Add some "friction" to prevent too much bouncing
 
         // Update simulation on each tick
         simulation.on('tick', () => {
+            // Bound nodes to the visible area with padding
+            const padding = 50;
+            nodes.forEach(d => {
+                d.x = Math.max(-width/2 + padding, Math.min(width/2 - padding, d.x));
+                d.y = Math.max(-height/2 + padding, Math.min(height/2 - padding, d.y));
+            });
+
             link
                 .attr('x1', d => d.source.x)
                 .attr('y1', d => d.source.y)
