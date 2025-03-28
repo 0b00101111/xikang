@@ -11,9 +11,11 @@ def fetch_paginated_data(url, headers, params=None):
     
     all_items = []
     page = 1
+    total_count = None
     
     while True:
-        current_params = {**params, 'page': page}
+        current_params = {**params, 'page': page, 'per_page': 100}
+        print(f"Fetching {url} with params: {current_params}")
         response = requests.get(url, headers=headers, params=current_params)
         
         if response.status_code != 200:
@@ -21,13 +23,23 @@ def fetch_paginated_data(url, headers, params=None):
             break
             
         data = response.json()
+        
+        # Debug: Print pagination info
+        pagination = data.get('pagination', {})
+        print(f"Pagination info: {pagination}")
+        
+        # Get total count from the first response
+        if total_count is None:
+            total_count = pagination.get('total', 0)
+            print(f"Total items to fetch: {total_count}")
+        
         items = data.get('data', [])
         
         if not items:
+            print("No more items found")
             break
             
         all_items.extend(items)
-        total_count = data.get('total', 0)
         current_count = len(all_items)
         
         print(f"Fetched page {page} ({len(items)} items, {current_count}/{total_count} total)")
