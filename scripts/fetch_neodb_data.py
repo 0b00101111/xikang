@@ -23,12 +23,26 @@ def fetch_paginated_data(url, headers, params=None):
             break
             
         data = response.json()
+        
+        # Debug: Print response structure for the first page
+        if page == 1:
+            print("First page response structure:")
+            print(json.dumps({k: v for k, v in data.items() if k != 'data'}, indent=2))
+            if data.get('data'):
+                print("Sample item structure:")
+                print(json.dumps(data['data'][0], indent=2))
+        
         items = data.get('data', [])
         
         if not items:
             print("No more items found")
             break
             
+        # Filter for movies if we're not using category parameter
+        if 'category' not in params:
+            items = [item for item in items if _is_movie_item(item)]
+            print(f"Filtered to {len(items)} movie items")
+        
         all_items.extend(items)
         current_count = len(all_items)
         
@@ -45,6 +59,25 @@ def fetch_paginated_data(url, headers, params=None):
     
     print(f"Finished fetching all pages. Total items: {len(all_items)}")
     return all_items
+
+def _is_movie_item(item):
+    """Helper function to determine if an item is a movie"""
+    # Check item itself
+    if item.get('type') == 'movie' or item.get('category') == 'movie':
+        return True
+        
+    # Check item.item structure (NeoDB sometimes nests the data)
+    item_data = item.get('item', {})
+    if item_data.get('type') == 'movie' or item_data.get('category') == 'movie':
+        return True
+        
+    # Check media type
+    if item.get('type') == 'media' and item.get('category') == 'movie':
+        return True
+    if item_data.get('type') == 'media' and item_data.get('category') == 'movie':
+        return True
+        
+    return False
 
 def fetch_neodb_data():
     # Get all credentials from environment variables
@@ -111,10 +144,22 @@ def fetch_neodb_data():
         try:
             print(f"\n2. Fetching movies from '{shelf_type}' shelf")
             endpoint = f"{BASE_URL}/api/me/shelf/{shelf_type}"
-            params = {'category': 'movie'}
             
-            # Fetch all pages for this shelf
+            # Try first with type=movie
+            params = {'type': 'movie'}
             items = fetch_paginated_data(endpoint, headers, params)
+            
+            if not items:
+                # If no items found, try with category=movie
+                print("Retrying with category=movie parameter...")
+                params = {'category': 'movie'}
+                items = fetch_paginated_data(endpoint, headers, params)
+            
+            if not items:
+                # If still no items, try without filter and let the code filter movies
+                print("Retrying without category filter...")
+                items = fetch_paginated_data(endpoint, headers)
+            
             print(f"Found {len(items)} movies on {shelf_type} shelf")
             
             # Process each movie
