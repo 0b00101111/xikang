@@ -18,28 +18,23 @@ const graphVisualization = (function() {
     // Get node color based on type and shelf status
     function getNodeColor(d) {
         if (d.type === 'movie') {
-            // Color based on shelf status
-            if (d.shelf === 'wishlist') {
-                return '#a0a0a0'; // Grey for wishlist items
-            } else if (d.shelf === 'dropped') {
-                return '#c0c0c0'; // Light grey for dropped items
-            } else {
-                return movieColor; // Full color for complete/progress
-            }
+            return colorUtils.calculateMovieColor(d, nodes, links);
         } else if (d.type === 'creator') {
-            if (d.role === 'director') {
-                return directorColor;
-            } else if (d.role === 'actor') {
-                return actorColor;
-            }
+            // Check if this creator has any completed movies
+            const hasCompletedMovie = links.some(link => {
+                const movieId = link.source === d.id ? link.target : link.source;
+                const movie = nodes.find(n => n.id === movieId && n.type === 'movie');
+                return movie && movie.shelf === 'complete';
+            });
+            return colorUtils.getCreatorColor(d.id, hasCompletedMovie);
         }
-        return '#999'; // Default color
+        return colorUtils.PALETTE.sumiInk3; // Default color
     }
 
     // Get node opacity based on shelf status
     function getNodeOpacity(d) {
-        if (d.type === 'movie' && d.shelf === 'progress') {
-            return 0.5; // Half transparent for in-progress items
+        if (d.type === 'movie' && d.shelf === 'wishlist') {
+            return 0.6; // Slightly transparent for wishlist items
         }
         return 1.0; // Full opacity for all other nodes
     }

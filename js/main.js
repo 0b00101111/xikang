@@ -32,38 +32,38 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Load data and initialize visualization
-    fetch('data/neodb-data.json')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(rawData => {
-            console.log("Raw data loaded:", rawData);
-            
-            // Process the data using the adapter
-            try {
-                const processedData = processNeoDBAData(rawData);
-                
-                if (!processedData) {
-                    throw new Error('Data processing failed');
+        fetch('data/neodb-data.json')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
                 }
+                return response.json();
+            })
+            .then(rawData => {
+                console.log("Raw data loaded:", rawData);
                 
+                // Process the data using the adapter
+                try {
+                const processedData = processNeoDBAData(rawData);
+                    
+                if (!processedData) {
+                        throw new Error('Data processing failed');
+                    }
+                    
                 console.log("Processed data:", processedData);
-                
-                // Initialize graph visualization
+                    
+                    // Initialize graph visualization
                 window.graphVisualization.init('graph-container', processedData);
                 
                 // Hide loading indicator
                 loadingElement.style.display = 'none';
-            } catch (processingError) {
-                console.error('Error processing data:', processingError);
+                } catch (processingError) {
+                    console.error('Error processing data:', processingError);
                 showError('Failed to process data: ' + processingError.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error loading data:', error);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading data:', error);
             showError('Failed to load data: ' + error.message);
         });
     
