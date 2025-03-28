@@ -313,28 +313,52 @@ const graphVisualization = (function() {
                 const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
                 const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
                 
-                if (!source || !target) return 50;
+                if (!source || !target) return 100;
                 
                 if (d.type === 'director' || d.type === 'actor') {
-                    return 70; // Movie to creator links
+                    return 150; // Increase distance between movies and creators
                 } else if (d.type === 'worked_with') {
-                    return 100; // Director to actor links
+                    return 200; // Increase distance between collaborators
                 } else if (d.type === 'co_actor') {
-                    return 80; // Actor to actor links
+                    return 180; // Increase distance between co-actors
                 }
-                return 50; // Default distance
+                return 100; // Default distance
             }))
             // Strong repulsive force
-            .force('charge', d3.forceManyBody().strength(d => {
-                if (d.role === 'director') return -300;
-                if (d.role === 'actor') return -200;
-                return -100; // Movies
-            }))
+            .force('charge', d3.forceManyBody()
+                .strength(d => {
+                    if (d.role === 'director') return -1000;
+                    if (d.role === 'actor') return -800;
+                    return -500; // Movies
+                })
+                .distanceMax(500) // Limit the maximum distance of repulsion
+            )
             // Very weak center gravity
-            .force('x', d3.forceX().strength(0.01))
-            .force('y', d3.forceY().strength(0.01))
-            // Collision prevention
-            .force('collision', d3.forceCollide().radius(d => getNodeSize(d) * 2));
+            .force('x', d3.forceX().strength(0.05))
+            .force('y', d3.forceY().strength(0.05))
+            // Collision prevention with larger radius
+            .force('collision', d3.forceCollide().radius(d => getNodeSize(d) * 3))
+            // Add alpha settings for better stabilization
+            .alpha(1)
+            .alphaDecay(0.01) // Slower cooling
+            .alphaMin(0.001);
+
+        // Update simulation on each tick
+        simulation.on('tick', () => {
+            link
+                .attr('x1', d => d.source.x)
+                .attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x)
+                .attr('y2', d => d.target.y);
+
+            node
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y);
+
+            nodeLabels
+                .attr('x', d => d.x)
+                .attr('y', d => d.y);
+        });
 
         // Add hover and click behaviors
         setupNodeInteractions();
