@@ -23,6 +23,12 @@
 !_TAG_KIND_DESCRIPTION!HTML	i,heading2	/H2 headings/
 !_TAG_KIND_DESCRIPTION!HTML	j,heading3	/H3 headings/
 !_TAG_KIND_DESCRIPTION!HTML	t,title	/titles/
+!_TAG_KIND_DESCRIPTION!JSON	a,array	/arrays/
+!_TAG_KIND_DESCRIPTION!JSON	b,boolean	/booleans/
+!_TAG_KIND_DESCRIPTION!JSON	n,number	/numbers/
+!_TAG_KIND_DESCRIPTION!JSON	o,object	/objects/
+!_TAG_KIND_DESCRIPTION!JSON	s,string	/strings/
+!_TAG_KIND_DESCRIPTION!JSON	z,null	/nulls/
 !_TAG_KIND_DESCRIPTION!JavaScript	C,constant	/constants/
 !_TAG_KIND_DESCRIPTION!JavaScript	G,getter	/getters/
 !_TAG_KIND_DESCRIPTION!JavaScript	M,field	/fields/
@@ -55,6 +61,7 @@
 !_TAG_OUTPUT_VERSION	0.0	/current.age/
 !_TAG_PARSER_VERSION!CSS	0.0	/current.age/
 !_TAG_PARSER_VERSION!HTML	0.0	/current.age/
+!_TAG_PARSER_VERSION!JSON	0.0	/current.age/
 !_TAG_PARSER_VERSION!JavaScript	1.1	/current.age/
 !_TAG_PARSER_VERSION!Markdown	1.1	/current.age/
 !_TAG_PARSER_VERSION!Python	0.0	/current.age/
@@ -164,6 +171,7 @@ createLegend	js/main.js	/^    function createLegend(data) {$/;"	f	function:anony
 createLegendItem	js/main.js	/^    function createLegendItem(label, filterType, color) {$/;"	f	function:anonymousFunction468443410100
 createMediaDetailsHTML	js/main.js	/^    function createMediaDetailsHTML(node) {$/;"	f	function:anonymousFunction468443410100
 createTagDetailsHTML	js/main.js	/^    function createTagDetailsHTML(node) {$/;"	f	function:anonymousFunction468443410100
+creatorTypes	data/neodb-data.json	/^{"nodes":[],"links":[],"metadata":{"mediaTypes":[],"creatorTypes":[],"lastUpdated":"2025-03-27T0/;"	a	object:metadata
 director	js/main.js	/^            director: 'var(--director-color)',$/;"	p	variable:anonymousFunction468443410100.getColorForCreatorType.colorMap
 dragended	js/graph.js	/^    function dragended(event, d) {$/;"	f	function:graphVisualization
 dragged	js/graph.js	/^    function dragged(event, d) {$/;"	f	function:graphVisualization
@@ -192,12 +200,17 @@ init	js/graph.js	/^    function init(containerId, graphData, options = {}) {$/;"
 initNodeTypes	js/graph.js	/^    function initNodeTypes() {$/;"	f	function:graphVisualization
 initializeVisualization	js/main.js	/^    function initializeVisualization(data) {$/;"	f	function:anonymousFunction468443410100
 last-updated	index.html	/^            <p>Data sourced from <a href="https:\/\/neodb.social" target="_blank">NeoDB<\/a> | L/;"	I
+lastUpdated	data/neodb-data.json	/^{"nodes":[],"links":[],"metadata":{"mediaTypes":[],"creatorTypes":[],"lastUpdated":"2025-03-27T0/;"	s	object:metadata
+links	data/neodb-data.json	/^{"nodes":[],"links":[],"metadata":{"mediaTypes":[],"creatorTypes":[],"lastUpdated":"2025-03-27T0/;"	a
 loadData	js/main.js	/^    function loadData() {$/;"	f	function:anonymousFunction468443410100
 loading	index.html	/^    <div id="loading">$/;"	I
 main	scripts/fetch-neodb-data.py	/^def main():$/;"	f
+mediaTypes	data/neodb-data.json	/^{"nodes":[],"links":[],"metadata":{"mediaTypes":[],"creatorTypes":[],"lastUpdated":"2025-03-27T0/;"	a	object:metadata
+metadata	data/neodb-data.json	/^{"nodes":[],"links":[],"metadata":{"mediaTypes":[],"creatorTypes":[],"lastUpdated":"2025-03-27T0/;"	o
 movie	js/main.js	/^            movie: 'var(--movie-color)',$/;"	p	variable:anonymousFunction468443410100.getColorForMediaType.colorMap
 music	js/main.js	/^            music: 'var(--music-color)',$/;"	p	variable:anonymousFunction468443410100.getColorForMediaType.colorMap
 musician	js/main.js	/^            musician: 'var(--musician-color)'$/;"	p	variable:anonymousFunction468443410100.getColorForCreatorType.colorMap
+nodes	data/neodb-data.json	/^{"nodes":[],"links":[],"metadata":{"mediaTypes":[],"creatorTypes":[],"lastUpdated":"2025-03-27T0/;"	a
 onNodeClick	js/graph.js	/^        onNodeClick: null,$/;"	p	variable:graphVisualization.config
 onNodeClick	js/main.js	/^            onNodeClick: showNodeDetails,$/;"	p	variable:anonymousObject468443410705
 onNodeHover	js/graph.js	/^        onNodeHover: null$/;"	p	variable:graphVisualization.config
