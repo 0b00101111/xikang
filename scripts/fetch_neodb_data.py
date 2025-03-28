@@ -241,7 +241,7 @@ def fetch_neodb_data():
     print(f"Fetching NeoDB movie data for user: {NEODB_USERNAME}")
     
     # Base URL for the API
-    BASE_URL = "https://neodb.social/api"  # Updated base URL
+    BASE_URL = "https://neodb.social/api"
     
     # Setup headers with full authorization
     headers = {
@@ -284,11 +284,12 @@ def fetch_neodb_data():
     for shelf_type in shelf_types:
         try:
             print(f"\n2. Fetching movies from '{shelf_type}' shelf")
-            endpoint = f"{BASE_URL}/me/items/movie"  # Updated endpoint for movie items
+            endpoint = f"{BASE_URL}/me/shelf/movie"  # Updated to use correct shelf endpoint
             
             # Updated parameters based on NeoDB API requirements
             params = {
-                'status': shelf_type
+                'status': shelf_type,
+                'type': 'movie'  # Ensure we only get movies
             }
             
             items = fetch_paginated_data(endpoint, headers, params)
