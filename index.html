@@ -3,67 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Media Universe</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>NeoDB Visualization</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        #graph-container {
+            width: 100%;
+            height: 100vh;
+            background-color: #ffffff;
+        }
+        
+        /* Minimal loading indicator */
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #555;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Simple zoom controls - positioned at the bottom right */
+        .zoom-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 5px;
+            z-index: 100;
+        }
+        
+        .zoom-controls button {
+            width: 30px;
+            height: 30px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border: 1px solid #ddd;
+            border-radius: 50%;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <h1>My Media Universe</h1>
-        <p class="subtitle">An interactive visualization of my NeoDB library</p>
-    </header>
+    <div id="graph-container"></div>
     
-    <div class="controls">
-        <div class="filters">
-            <button class="filter-btn active" data-category="all">All</button>
-            <button class="filter-btn" data-category="movie">Movies</button>
-            <button class="filter-btn" data-category="book">Books</button>
-            <button class="filter-btn" data-category="tvseries">TV Series</button>
-            <button class="filter-btn" data-category="music">Music</button>
-            <button class="filter-btn" data-category="podcast">Podcasts</button>
-        </div>
-        
-        <div class="search">
-            <input type="text" id="search-input" placeholder="Search...">
-            <button id="search-btn">Search</button>
-        </div>
-        
-        <div class="zoom-controls">
-            <button id="zoom-in" title="Zoom In">+</button>
-            <button id="zoom-out" title="Zoom Out">-</button>
-            <button id="reset-view" title="Reset View">⟲</button>
-        </div>
+    <div class="zoom-controls">
+        <button id="zoom-in">+</button>
+        <button id="zoom-out">−</button>
+        <button id="reset-view">↺</button>
     </div>
     
-    <div class="main-content">
-        <div id="graph-container" class="graph-container"></div>
-        
-        <div class="info-panel">
-            <h2>Information</h2>
-            <div id="info-content">
-                <p class="info-placeholder">Click on a node to view details</p>
-            </div>
-        </div>
-    </div>
-    
-    <div class="legend-container">
-        <h3>Legend</h3>
-        <div id="dynamic-legend" class="legend"></div>
-    </div>
-    
-    <footer>
-        <p>Data sourced from <a href="https://neodb.social">NeoDB</a> | Last updated: <span id="last-updated">Unknown</span></p>
-        <p>Created with D3.js</p>
-    </footer>
-    
-    <div id="loading" class="loading">
+    <div id="loading">
         <div class="spinner"></div>
-        <p>Loading data...</p>
     </div>
 
     <!-- Load scripts -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="js/data-adapter.js"></script>
     <script src="js/graph.js"></script>
-    <script src="js/main.js"></script>
+    <script>
+        // Minimal initialization script
+        document.addEventListener('DOMContentLoaded', function() {
+            const loadingElement = document.getElementById('loading');
+            
+            // Zoom control event listeners
+            document.getElementById('zoom-in').addEventListener('click', function() {
+                graphVisualization.zoomIn();
+            });
+            
+            document.getElementById('zoom-out').addEventListener('click', function() {
+                graphVisualization.zoomOut();
+            });
+            
+            document.getElementById('reset-view').addEventListener('click', function() {
+                graphVisualization.resetView();
+            });
+            
+            // Load data and initialize visualization
+            fetch('data/neodb-data.json')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(rawData => {
+                    console.log("Raw data loaded:", rawData);
+                    
+                    // Process the data using the adapter
+                    try {
+                        const processedData = processNeoDBAData(rawData);
+                        
+                        if (!processedData) {
+                            throw new Error('Data processing failed');
+                        }
+                        
+                        console.log("Processed data:", processedData);
+                        
+                        // Initialize graph visualization
+                        graphVisualization.init('graph-container', processedData);
+                        
+                        // Hide loading indicator
+                        loadingElement.style.display = 'none';
+                    } catch (processingError) {
+                        console.error('Error processing data:', processingError);
+                        loadingElement.textContent = 'Failed to process data: ' + processingError.message;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading data:', error);
+                    loadingElement.textContent = 'Failed to load data: ' + error.message;
+                });
+            
+            // Handle window resize
+            window.addEventListener('resize', function() {
+                if (graphVisualization) {
+                    graphVisualization.resize();
+                }
+            });
+        });
+    </script>
 </body>
 </html>
