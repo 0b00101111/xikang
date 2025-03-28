@@ -1,6 +1,6 @@
 // Main application code for NeoDB visualization
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', () => {
     const loadingElement = document.getElementById('loading');
     
     // Function to show error message
@@ -12,65 +12,44 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
     }
     
-    // Zoom control event listeners
-    document.getElementById('zoom-in').addEventListener('click', function() {
-        if (window.graphVisualization) {
-            window.graphVisualization.zoomIn();
-        }
-    });
-    
-    document.getElementById('zoom-out').addEventListener('click', function() {
-        if (window.graphVisualization) {
-            window.graphVisualization.zoomOut();
-        }
-    });
-    
-    document.getElementById('reset-view').addEventListener('click', function() {
-        if (window.graphVisualization) {
-            window.graphVisualization.resetView();
-        }
-    });
-    
-    // Load data and initialize visualization
-        fetch('data/neodb-data.json')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(rawData => {
-                console.log("Raw data loaded:", rawData);
-                
-                // Process the data using the adapter
-                try {
-                const processedData = processNeoDBAData(rawData);
-                    
-                if (!processedData) {
-                        throw new Error('Data processing failed');
-                    }
-                    
-                console.log("Processed data:", processedData);
-                    
-                    // Initialize graph visualization
-                window.graphVisualization.init('graph-container', processedData);
-                
-                // Hide loading indicator
-                loadingElement.style.display = 'none';
-                } catch (processingError) {
-                    console.error('Error processing data:', processingError);
-                showError('Failed to process data: ' + processingError.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error loading data:', error);
+    // Load data from the JSON file
+    fetch('data/neodb-data.json')
+        .then(response => response.json())
+        .then(rawData => {
+            // Process the data
+            const processedData = processNeoDBAData(rawData);
+            
+            // Debug: Log the processed data structure
+            console.log("=== PROCESSED DATA ===");
+            console.log("Total nodes:", processedData.nodes.length);
+            console.log("Node types:", processedData.nodes.reduce((acc, node) => {
+                acc[node.type] = (acc[node.type] || 0) + 1;
+                return acc;
+            }, {}));
+            console.log("Total links:", processedData.links.length);
+            console.log("Link types:", processedData.links.reduce((acc, link) => {
+                acc[link.type] = (acc[link.type] || 0) + 1;
+                return acc;
+            }, {}));
+            
+            // Initialize the visualization
+            graphVisualization.init('graph-container', processedData);
+            
+            // Add event listeners for zoom controls
+            document.getElementById('zoom-in').addEventListener('click', graphVisualization.zoomIn);
+            document.getElementById('zoom-out').addEventListener('click', graphVisualization.zoomOut);
+            document.getElementById('reset-view').addEventListener('click', graphVisualization.resetView);
+            
+            // Add window resize handler
+            window.addEventListener('resize', graphVisualization.resize);
+            
+            // Hide loading indicator
+            loadingElement.style.display = 'none';
+        })
+        .catch(error => {
+            console.error('Error loading or processing data:', error);
+            document.getElementById('graph-container').innerHTML = 
+                '<div class="error-message">Error loading visualization data</div>';
             showError('Failed to load data: ' + error.message);
         });
-    
-    // Handle window resize
-    window.addEventListener('resize', function() {
-        if (window.graphVisualization && window.graphVisualization.resize) {
-            window.graphVisualization.resize();
-        }
-    });
 });

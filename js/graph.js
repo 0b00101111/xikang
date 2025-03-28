@@ -201,11 +201,12 @@ const graphVisualization = (function() {
             .attr('width', '100%')
             .attr('height', '100%')
             .attr('viewBox', [-width/2, -height/2, width, height])
-            .style('background', '#ffffff');
+            .style('background', '#ffffff')
+            .style('overflow', 'visible'); // Allow content to overflow
         
-        // Create zoom behavior
+        // Create zoom behavior with extended range
         zoom = d3.zoom()
-            .scaleExtent([0.1, 8])
+            .scaleExtent([0.1, 10]) // Allow more zoom out/in
             .on('zoom', (event) => {
                 g.attr('transform', event.transform);
             });
@@ -250,21 +251,55 @@ const graphVisualization = (function() {
             .attr('fill', '#999')
             .attr('d', 'M0,-5L10,0L0,5');
         
+        // Create force simulation with movie-specific forces
+        simulation = d3.forceSimulation(nodes)
+            // Links with variable distances
+            .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
+                const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
+                const target = typeof d.target === 'object' ? d.target : nodes.find(n => n.id === d.target);
+                
+                if (!source || !target) return 200;
+                
+                // Adjust distances based on node types
+                if (source.type === 'creator' || target.type === 'creator') {
+                    return 150; // Creator to movie distance
+                }
+                return 200; // Movie to movie distance
+            }).strength(0.5)) // Reduced link strength for more flexibility
+            // Strong but not excessive repulsive force
+            .force('charge', d3.forceManyBody()
+                .strength(d => {
+                    if (d.type === 'creator') return -300;
+                    return -500; // Movies
+                })
+                .distanceMax(1000)
+                .theta(0.9)
+            )
+            // Very weak center gravity
+            .force('x', d3.forceX().strength(0.05))
+            .force('y', d3.forceY().strength(0.05))
+            // Collision prevention
+            .force('collision', d3.forceCollide().radius(d => {
+                if (d.type === 'creator') return getNodeSize(d) * 2;
+                return getNodeSize(d) * 3;
+            }).strength(0.5))
+            // Simulation settings
+            .alpha(0.5)
+            .alphaDecay(0.05)
+            .alphaMin(0.001)
+            .velocityDecay(0.6);
+
         // Create links
         link = linkGroup.selectAll('line')
             .data(links)
             .enter().append('line')
-            .attr('stroke', '#e0e0e0')
-            .attr('stroke-opacity', 0.5)
+            .attr('stroke', colorUtils.PALETTE.fujiGray)
+            .attr('stroke-opacity', 0.3)
             .attr('stroke-width', d => {
-                if (d.type === 'director' || d.type === 'actor') {
-                    return 1.5;
-                } else if (d.type === 'worked_with') {
+                if (d.type === 'directed' || d.type === 'acted_in') {
                     return 1;
-                } else if (d.type === 'co_actor') {
-                    return 0.5;
                 }
-                return 1;
+                return 0.5;
             });
         
         // Create nodes
@@ -282,78 +317,31 @@ const graphVisualization = (function() {
                 .on('drag', dragged)
                 .on('end', dragended));
         
-        // Create labels for all nodes
+        // Create labels with better visibility
         nodeLabels = g.append('g')
             .selectAll('text')
             .data(nodes)
             .enter().append('text')
-            .attr('dx', 6)
+            .attr('dx', 8)
             .attr('dy', 3)
             .text(d => d.name)
             .attr('font-family', 'sans-serif')
             .attr('font-size', d => {
-                if (d.type === 'movie') return '8px';
-                if (d.role === 'director') return '9px';
+                if (d.type === 'creator') return '10px';
                 return '8px';
             })
-            .attr('fill', '#555')
+            .attr('fill', '#333')
             .style('pointer-events', 'none')
             .style('user-select', 'none')
             .style('opacity', d => {
+                if (d.type === 'creator') return 0.9;
                 if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-                if (d.role === 'director') return 0.9;
-                return 0.7;
+                return 0.8;
             });
         
-        // Create force simulation with movie-specific forces
-        simulation = d3.forceSimulation(nodes)
-            // Links with variable distances
-            .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
-                const source = typeof d.source === 'object' ? d.source : nodes.find(n => n.id === d.source);
-                const target = typeof d.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
-                
-                if (!source || !target) return 200;
-                
-                if (d.type === 'director' || d.type === 'actor') {
-                    return 200; // Reduced distance
-                } else if (d.type === 'worked_with') {
-                    return 250; // Reduced distance
-                } else if (d.type === 'co_actor') {
-                    return 200; // Reduced distance
-                }
-                return 150; // Reduced default distance
-            }).strength(1)) // Increased link strength for more stability
-            // Strong but not excessive repulsive force
-            .force('charge', d3.forceManyBody()
-                .strength(d => {
-                    if (d.role === 'director') return -1000;
-                    if (d.role === 'actor') return -800;
-                    return -500;
-                })
-                .distanceMax(500) // Reduced maximum distance
-                .theta(0.9) // Less accurate but faster calculations
-            )
-            // Add very weak center gravity
-            .force('x', d3.forceX().strength(0.1))
-            .force('y', d3.forceY().strength(0.1))
-            // Collision prevention
-            .force('collision', d3.forceCollide().radius(d => getNodeSize(d) * 3).strength(0.5))
-            // Faster initial cooling
-            .alpha(0.5) // Start with less energy
-            .alphaDecay(0.05) // Cool down faster (default is 0.0228)
-            .alphaMin(0.001)
-            .velocityDecay(0.6); // More friction to reduce bouncing
-
         // Update simulation on each tick
         simulation.on('tick', () => {
-            // Bound nodes to the visible area with padding
-            const padding = 50;
-            nodes.forEach(d => {
-                d.x = Math.max(-width/2 + padding, Math.min(width/2 - padding, d.x));
-                d.y = Math.max(-height/2 + padding, Math.min(height/2 - padding, d.y));
-            });
-
+            // Remove bounds checking to allow unlimited canvas
             link
                 .attr('x1', d => d.source.x)
                 .attr('y1', d => d.source.y)
