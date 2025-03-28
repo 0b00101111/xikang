@@ -140,25 +140,6 @@ function processNeoDBAData(rawData) {
         const shelfStatus = nodeShelfMap.get(nodeId) || 'unknown';
         const nodeData = node.data || {};
         
-        // Debug raw movie data structure
-        console.log('=== Movie Raw Data ===', {
-            id: node.id,
-            name: node.name,
-            fullData: node,
-            creators: {
-                fromNode: {
-                    director: node.director,
-                    actor: node.actor,
-                    playwright: node.playwright
-                },
-                fromData: {
-                    director: nodeData.director,
-                    actor: nodeData.actor,
-                    playwright: nodeData.playwright
-                }
-            }
-        });
-        
         // Create movie node
         const processedNode = {
             id: nodeId,
@@ -176,58 +157,59 @@ function processNeoDBAData(rawData) {
         if (!nodeIds.has(nodeId)) {
             processedData.nodes.push(processedNode);
             nodeIds.add(nodeId);
-            console.log('Added movie node:', processedNode);
         }
 
-        // Process creators - check both node and nodeData
-        const creators = {
-            director: [
-                ...(Array.isArray(node.director) ? node.director : [node.director]),
-                ...(Array.isArray(nodeData.director) ? nodeData.director : [nodeData.director])
-            ].filter(Boolean),
-            actor: [
-                ...(Array.isArray(node.actor) ? node.actor : [node.actor]),
-                ...(Array.isArray(nodeData.actor) ? nodeData.actor : [nodeData.actor])
-            ].filter(Boolean),
-            playwright: [
-                ...(Array.isArray(node.playwright) ? node.playwright : [node.playwright]),
-                ...(Array.isArray(nodeData.playwright) ? nodeData.playwright : [nodeData.playwright])
-            ].filter(Boolean)
-        };
+        // Find creator relationships in links
+        const movieLinks = rawData.graph_data.links.filter(link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            return (sourceId === nodeId || targetId === nodeId) && 
+                   !['shelf_wishlist', 'shelf_progress', 'shelf_complete', 'shelf_dropped'].includes(sourceId) &&
+                   !['shelf_wishlist', 'shelf_progress', 'shelf_complete', 'shelf_dropped'].includes(targetId);
+        });
 
-        // Log creator data for this movie
-        console.log(`Processing creators for movie: ${processedNode.name}`, creators);
+        // Log the first few movie's links for debugging
+        if (processedData.nodes.length <= 3) {
+            console.log('\n=== Movie Links ===');
+            console.log('Movie:', node.name);
+            console.log('Related links:', movieLinks);
+        }
 
-        // Process each type of creator
-        Object.entries(creators).forEach(([role, names]) => {
-            names.filter(name => name && typeof name === 'string').forEach(name => {
-                const creatorId = `${role}_${createIdFromName(name)}`;
-                console.log(`Processing ${role}: ${name} (ID: ${creatorId})`);
+        // Process each link to find creators
+        movieLinks.forEach(link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            const otherId = sourceId === nodeId ? targetId : sourceId;
+            
+            // Find the creator node in the raw data
+            const creatorNode = rawData.graph_data.nodes.find(n => n.id === otherId);
+            if (creatorNode && (creatorNode.type === 'person' || creatorNode.type === 'creator')) {
+                const creatorId = creatorNode.id;
+                const role = link.type === 'directed' ? 'director' :
+                           link.type === 'acted_in' ? 'actor' :
+                           link.type === 'wrote' ? 'playwright' : 'unknown';
 
                 // Add creator node if not exists
                 if (!creatorIds.has(creatorId)) {
-                    const creatorNode = {
+                    const processedCreator = {
                         id: creatorId,
-                        name: name,
+                        name: creatorNode.name,
                         type: 'creator',
                         role: role
                     };
-                    processedData.nodes.push(creatorNode);
+                    processedData.nodes.push(processedCreator);
                     creatorIds.add(creatorId);
-                    console.log(`Added new creator node:`, creatorNode);
+                    console.log(`Added creator node: ${creatorNode.name} (${role})`);
                 }
 
-                // Add link from creator to movie
-                const linkType = role === 'director' ? 'directed' :
-                               role === 'actor' ? 'acted_in' : 'wrote';
-                
+                // Add the link
                 processedData.links.push({
                     source: creatorId,
                     target: nodeId,
-                    type: linkType
+                    type: link.type
                 });
-                console.log(`Added link: ${creatorId} -[${linkType}]-> ${nodeId}`);
-            });
+                console.log(`Added link: ${creatorNode.name} -[${link.type}]-> ${node.name}`);
+            }
         });
     });
 
