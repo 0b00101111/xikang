@@ -92,6 +92,72 @@ def _is_movie_item(item):
     
     return False
 
+def fetch_movie_details(movie_uuid, base_url, headers):
+    """Fetch detailed movie information including creators"""
+    endpoint = f"{base_url}/api/movie/{movie_uuid}"
+    print(f"Fetching movie details: {endpoint}")
+    
+    try:
+        response = requests.get(endpoint, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Failed to fetch movie details: {response.text[:200]}")
+            return None
+    except Exception as e:
+        print(f"Error fetching movie details: {e}")
+        return None
+
+def process_movie_creators(movie_data, movie_id, creator_nodes, all_data):
+    """Process movie creators (directors, playwrights, actors) and add them to the graph"""
+    # Process directors
+    for director_name in movie_data.get('director', []):
+        creator_id = f"director_{hash(director_name)}"
+        if creator_id not in creator_nodes:
+            creator_nodes[creator_id] = {
+                'id': creator_id,
+                'name': director_name,
+                'type': 'creator',
+                'role': 'director'
+            }
+        all_data['graph_data']['links'].append({
+            'source': creator_id,
+            'target': movie_id,
+            'type': 'directed'
+        })
+    
+    # Process playwrights
+    for playwright_name in movie_data.get('playwright', []):
+        creator_id = f"playwright_{hash(playwright_name)}"
+        if creator_id not in creator_nodes:
+            creator_nodes[creator_id] = {
+                'id': creator_id,
+                'name': playwright_name,
+                'type': 'creator',
+                'role': 'playwright'
+            }
+        all_data['graph_data']['links'].append({
+            'source': creator_id,
+            'target': movie_id,
+            'type': 'wrote'
+        })
+    
+    # Process actors (all of them, not just top 5)
+    for actor_name in movie_data.get('actor', []):
+        creator_id = f"actor_{hash(actor_name)}"
+        if creator_id not in creator_nodes:
+            creator_nodes[creator_id] = {
+                'id': creator_id,
+                'name': actor_name,
+                'type': 'creator',
+                'role': 'actor'
+            }
+        all_data['graph_data']['links'].append({
+            'source': creator_id,
+            'target': movie_id,
+            'type': 'acted_in'
+        })
+
 def fetch_neodb_data():
     # Get all credentials from environment variables
     NEODB_USERNAME = os.environ.get("NEODB_USERNAME")
@@ -185,70 +251,43 @@ def fetch_neodb_data():
                 
                 # Create or update movie node
                 if movie_id not in movie_nodes:
-                    movie_nodes[movie_id] = {
-                        'id': movie_id,
-                        'name': movie_data.get('title', 'Untitled Movie'),
-                        'type': 'movie',
-                        'shelf': shelf_type,
-                        'data': {
-                            'url': movie_data.get('url'),
-                            'release_date': movie_data.get('release_date'),
-                            'description': movie_data.get('description'),
-                            'rating': item.get('rating'),
-                            'comment': item.get('comment')
+                    # Fetch detailed movie information
+                    detailed_data = fetch_movie_details(movie_id, BASE_URL, headers)
+                    if detailed_data:
+                        movie_nodes[movie_id] = {
+                            'id': movie_id,
+                            'name': detailed_data.get('title', 'Untitled Movie'),
+                            'type': 'movie',
+                            'shelf': shelf_type,
+                            'data': {
+                                'url': detailed_data.get('url'),
+                                'imdb': detailed_data.get('imdb'),
+                                'year': detailed_data.get('year'),
+                                'genre': detailed_data.get('genre', []),
+                                'area': detailed_data.get('area', []),
+                                'language': detailed_data.get('language', []),
+                                'duration': detailed_data.get('duration'),
+                                'rating': item.get('rating'),
+                                'comment': item.get('comment'),
+                                'description': detailed_data.get('description')
+                            }
                         }
-                    }
-                
-                # Process creators (directors, writers, actors)
-                credits = movie_data.get('credits', {})
-                
-                # Process directors
-                for director in credits.get('director', []):
-                    creator_id = f"director_{director['uuid']}" if 'uuid' in director else f"director_{hash(director['name'])}"
-                    if creator_id not in creator_nodes:
-                        creator_nodes[creator_id] = {
-                            'id': creator_id,
-                            'name': director['name'],
-                            'type': 'creator',
-                            'role': 'director'
+                        
+                        # Process creators from detailed data
+                        process_movie_creators(detailed_data, movie_id, creator_nodes, all_data)
+                    else:
+                        # Fallback to basic data if detailed fetch fails
+                        movie_nodes[movie_id] = {
+                            'id': movie_id,
+                            'name': movie_data.get('title', 'Untitled Movie'),
+                            'type': 'movie',
+                            'shelf': shelf_type,
+                            'data': {
+                                'url': movie_data.get('url'),
+                                'rating': item.get('rating'),
+                                'comment': item.get('comment')
+                            }
                         }
-                    all_data['graph_data']['links'].append({
-                        'source': creator_id,
-                        'target': movie_id,
-                        'type': 'directed'
-                    })
-                
-                # Process writers
-                for writer in credits.get('writer', []):
-                    creator_id = f"writer_{writer['uuid']}" if 'uuid' in writer else f"writer_{hash(writer['name'])}"
-                    if creator_id not in creator_nodes:
-                        creator_nodes[creator_id] = {
-                            'id': creator_id,
-                            'name': writer['name'],
-                            'type': 'creator',
-                            'role': 'writer'
-                        }
-                    all_data['graph_data']['links'].append({
-                        'source': creator_id,
-                        'target': movie_id,
-                        'type': 'wrote'
-                    })
-                
-                # Process actors (limit to main cast)
-                for actor in credits.get('cast', [])[:5]:  # Limit to top 5 cast members
-                    creator_id = f"actor_{actor['uuid']}" if 'uuid' in actor else f"actor_{hash(actor['name'])}"
-                    if creator_id not in creator_nodes:
-                        creator_nodes[creator_id] = {
-                            'id': creator_id,
-                            'name': actor['name'],
-                            'type': 'creator',
-                            'role': 'actor'
-                        }
-                    all_data['graph_data']['links'].append({
-                        'source': creator_id,
-                        'target': movie_id,
-                        'type': 'acted_in'
-                    })
                 
                 # Link to shelf
                 all_data['graph_data']['links'].append({
@@ -256,6 +295,9 @@ def fetch_neodb_data():
                     'target': movie_id,
                     'type': 'contains'
                 })
+                
+                # Add small delay between movie detail requests
+                time.sleep(0.2)
         
         except Exception as e:
             print(f"Error processing {shelf_type} shelf: {e}")
