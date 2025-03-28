@@ -94,6 +94,15 @@
         document.addEventListener('DOMContentLoaded', function() {
             const loadingElement = document.getElementById('loading');
             
+            // Function to show error message
+            function showError(message) {
+                loadingElement.innerHTML = `
+                    <div class="error-message" style="color: #ff0000; text-align: center; padding: 20px;">
+                        ${message}
+                    </div>
+                `;
+            }
+            
             // Zoom control event listeners
             document.getElementById('zoom-in').addEventListener('click', function() {
                 graphVisualization.zoomIn();
@@ -135,17 +144,17 @@
                         loadingElement.style.display = 'none';
                     } catch (processingError) {
                         console.error('Error processing data:', processingError);
-                        loadingElement.textContent = 'Failed to process data: ' + processingError.message;
+                        showError('Failed to process data: ' + processingError.message);
                     }
                 })
                 .catch(error => {
                     console.error('Error loading data:', error);
-                    loadingElement.textContent = 'Failed to load data: ' + error.message;
+                    showError('Failed to load data: ' + error.message);
                 });
             
             // Handle window resize
             window.addEventListener('resize', function() {
-                if (graphVisualization) {
+                if (graphVisualization && graphVisualization.resize) {
                     graphVisualization.resize();
                 }
             });

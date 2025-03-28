@@ -583,6 +583,27 @@ const graphVisualization = (function() {
             });
         }
 
+        // Handle window resizing
+        function resize() {
+            if (!svg || !g) return;
+
+            // Get new dimensions
+            const container = document.getElementById('graph-container');
+            width = container.clientWidth;
+            height = container.clientHeight;
+
+            // Update SVG dimensions
+            svg.attr('viewBox', [-width/2, -height/2, width, height]);
+
+            // Update simulation
+            if (simulation) {
+                simulation
+                    .force('x', d3.forceX().strength(0.01))
+                    .force('y', d3.forceY().strength(0.01))
+                    .restart();
+            }
+        }
+
         // Return the public API
         return {
             init,
@@ -590,7 +611,8 @@ const graphVisualization = (function() {
             zoomOut,
             resetView,
             filterByCategory,
-            toggleNodeType
+            toggleNodeType,
+            resize
         };
     }
 })();
