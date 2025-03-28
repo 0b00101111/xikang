@@ -59,6 +59,135 @@ const graphVisualization = (function() {
         return 4; // Default size
     }
 
+    // Drag behavior functions
+    function dragstarted(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+    }
+
+    function dragged(event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+    }
+
+    function dragended(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+    }
+
+    // Zoom control functions
+    function zoomIn() {
+        if (!svg || !zoom) return;
+        svg.transition()
+            .duration(750)
+            .call(zoom.scaleBy, 1.3);
+    }
+
+    function zoomOut() {
+        if (!svg || !zoom) return;
+        svg.transition()
+            .duration(750)
+            .call(zoom.scaleBy, 0.7);
+    }
+
+    function resetView() {
+        if (!svg || !zoom) return;
+        svg.transition()
+            .duration(750)
+            .call(zoom.transform, d3.zoomIdentity);
+    }
+
+    // Filter nodes by category
+    function filterByCategory(category) {
+        if (!node || !nodeLabels || !link) return;
+
+        // Update node visibility
+        node.style('opacity', d => {
+            if (category === 'all') return getNodeOpacity(d);
+            if (d.type === 'movie') {
+                return d.shelf === category ? getNodeOpacity(d) : 0.1;
+            }
+            return getNodeOpacity(d);
+        });
+
+        // Update label visibility
+        nodeLabels.style('opacity', d => {
+            if (category === 'all') {
+                if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
+                if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
+                if (d.role === 'director') return 0.9;
+                return 0.7;
+            }
+            if (d.type === 'movie') {
+                return d.shelf === category ? 0.9 : 0.1;
+            }
+            return 0.7;
+        });
+
+        // Update link visibility
+        link.style('opacity', l => {
+            if (category === 'all') return 0.5;
+            const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+            const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+            
+            if (source.type === 'movie' && source.shelf === category) return 0.5;
+            if (target.type === 'movie' && target.shelf === category) return 0.5;
+            return 0.1;
+        });
+    }
+
+    // Toggle visibility of node types
+    function toggleNodeType(type) {
+        if (!node || !nodeLabels || !link) return;
+
+        const isVisible = node.style('opacity') === '1';
+        
+        // Update node visibility
+        node.style('opacity', d => {
+            if (d.type === type) return isVisible ? 0.1 : getNodeOpacity(d);
+            return getNodeOpacity(d);
+        });
+
+        // Update label visibility
+        nodeLabels.style('opacity', d => {
+            if (d.type === type) return isVisible ? 0.1 : 0.7;
+            if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
+            if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
+            if (d.role === 'director') return 0.9;
+            return 0.7;
+        });
+
+        // Update link visibility
+        link.style('opacity', l => {
+            const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+            const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+            
+            if (source.type === type || target.type === type) return isVisible ? 0.1 : 0.5;
+            return 0.5;
+        });
+    }
+
+    // Handle window resizing
+    function resize() {
+        if (!svg || !g || !simulation) return;
+
+        // Get new dimensions
+        const container = document.getElementById('graph-container');
+        width = container.clientWidth;
+        height = container.clientHeight;
+
+        // Update SVG dimensions
+        svg.attr('viewBox', [-width/2, -height/2, width, height]);
+
+        // Update simulation
+        simulation
+            .force('x', d3.forceX().strength(0.01))
+            .force('y', d3.forceY().strength(0.01))
+            .restart();
+    }
+
     // Initialize the visualization
     function init(containerId, graphData) {
         // Set dimensions based on container
@@ -211,410 +340,207 @@ const graphVisualization = (function() {
             .force('y', d3.forceY().strength(0.01))
             // Collision prevention
             .force('collision', d3.forceCollide().radius(d => getNodeSize(d) * 2));
+
+        // Add hover and click behaviors
+        setupNodeInteractions();
+    }
+
+    // Setup node interactions (hover and click)
+    function setupNodeInteractions() {
+        if (!node || !nodeLabels || !link) return;
+
+        // Add hover behavior
+        node.on('mouseover', handleNodeMouseOver)
+           .on('mousemove', handleNodeMouseMove)
+           .on('mouseout', handleNodeMouseOut)
+           .on('click', handleNodeClick);
+
+        // Clear selection when clicking on background
+        svg.on('click', handleBackgroundClick);
+    }
+
+    // Handle node mouse over
+    function handleNodeMouseOver(event, d) {
+        // Show tooltip with node details
+        const tooltip = d3.select('.node-tooltip');
+        let tooltipContent = `<strong>${d.name}</strong><br>`;
         
-        // Add hover behavior for highlighting and tooltip
-        node.on('mouseover', function(event, d) {
-            // Show tooltip with node details
-            let tooltipContent = `<strong>${d.name}</strong><br>`;
-            
-            if (d.type === 'movie') {
-                tooltipContent += `Type: Movie<br>Status: ${d.shelf || 'Unknown'}`;
-                
-                if (d.rating) {
-                    tooltipContent += `<br>Rating: ${d.rating}/10`;
-                }
-            } else if (d.type === 'creator') {
-                tooltipContent += `Role: ${d.role || 'Creator'}`;
-                
-                // Find connected movies for this creator
-                const connectedMovies = links
-                    .filter(link => 
-                        (typeof link.source === 'object' ? link.source.id === d.id : link.source === d.id) && 
-                        nodes.find(n => n.id === (typeof link.target === 'object' ? link.target.id : link.target) && n.type === 'movie')
-                    )
-                    .map(link => typeof link.target === 'object' ? link.target.id : link.target)
-                    .map(movieId => nodes.find(n => n.id === movieId))
-                    .filter(Boolean);
-                
-                if (connectedMovies.length > 0) {
-                    tooltipContent += `<br><br>Movies:`;
-                    connectedMovies.forEach(movie => {
-                        tooltipContent += `<br>• ${movie.name}`;
-                    });
-                }
+        if (d.type === 'movie') {
+            tooltipContent += `Type: Movie<br>Status: ${d.shelf || 'Unknown'}`;
+            if (d.rating) {
+                tooltipContent += `<br>Rating: ${d.rating}/10`;
             }
+        } else if (d.type === 'creator') {
+            tooltipContent += `Role: ${d.role || 'Creator'}`;
             
-            tooltip.html(tooltipContent)
-                .style('visibility', 'visible')
-                .style('left', (event.pageX + 10) + 'px')
-                .style('top', (event.pageY - 10) + 'px');
+            // Find connected movies
+            const connectedMovies = links
+                .filter(link => 
+                    (typeof link.source === 'object' ? link.source.id === d.id : link.source === d.id) && 
+                    nodes.find(n => n.id === (typeof link.target === 'object' ? link.target.id : link.target) && n.type === 'movie')
+                )
+                .map(link => typeof link.target === 'object' ? link.target.id : link.target)
+                .map(movieId => nodes.find(n => n.id === movieId))
+                .filter(Boolean);
             
-            // Highlight connected links
-            link.style('stroke', l => {
-                const source = typeof l.source === 'object' ? l.source.id : l.source;
-                const target = typeof l.target === 'object' ? l.target.id : l.target;
-                return (source === d.id || target === d.id) ? '#666' : '#e0e0e0';
-            })
-            .style('stroke-opacity', l => {
-                const source = typeof l.source === 'object' ? l.source.id : l.source;
-                const target = typeof l.target === 'object' ? l.target.id : l.target;
-                return (source === d.id || target === d.id) ? 0.9 : 0.1;
-            })
-            .style('stroke-width', l => {
-                const source = typeof l.source === 'object' ? l.source.id : l.source;
-                const target = typeof l.target === 'object' ? l.target.id : l.target;
-                if (source === d.id || target === d.id) {
-                    if (l.type === 'director' || l.type === 'actor') {
-                        return 2;
-                    } else if (l.type === 'worked_with') {
-                        return 1.5;
-                    } else if (l.type === 'co_actor') {
-                        return 1;
-                    }
-                    return 1.5;
-                }
-                return 0.5;
-            });
-            
-            // Highlight connected nodes
-            node.style('opacity', n => {
-                const isConnected = links.some(l => {
-                    const source = typeof l.source === 'object' ? l.source.id : l.source;
-                    const target = typeof l.target === 'object' ? l.target.id : l.target;
-                    return (source === d.id && target === n.id) || (target === d.id && source === n.id);
+            if (connectedMovies.length > 0) {
+                tooltipContent += `<br><br>Movies:`;
+                connectedMovies.forEach(movie => {
+                    tooltipContent += `<br>• ${movie.name}`;
                 });
-                
-                if (n.id === d.id) return 1;
-                if (isConnected) {
-                    if (n.type === 'movie' && n.shelf === 'progress') return 0.7;
+            }
+        }
+        
+        tooltip.html(tooltipContent)
+            .style('visibility', 'visible')
+            .style('left', (event.pageX + 10) + 'px')
+            .style('top', (event.pageY - 10) + 'px');
+        
+        highlightConnections(d);
+    }
+
+    // Handle node mouse move
+    function handleNodeMouseMove(event) {
+        const tooltip = d3.select('.node-tooltip');
+        tooltip.style('left', (event.pageX + 10) + 'px')
+               .style('top', (event.pageY - 10) + 'px');
+    }
+
+    // Handle node mouse out
+    function handleNodeMouseOut() {
+        const tooltip = d3.select('.node-tooltip');
+        tooltip.style('visibility', 'hidden');
+        
+        if (!selectedNode) {
+            resetHighlighting();
+        }
+    }
+
+    // Handle node click
+    function handleNodeClick(event, d) {
+        event.stopPropagation();
+        
+        if (selectedNode === d) {
+            selectedNode = null;
+            resetHighlighting();
+        } else {
+            selectedNode = d;
+            highlightConnections(d, true);
+        }
+    }
+
+    // Handle background click
+    function handleBackgroundClick(event) {
+        if (event.target === this && selectedNode) {
+            selectedNode = null;
+            resetHighlighting();
+        }
+    }
+
+    // Highlight connections for a node
+    function highlightConnections(d, isClick = false) {
+        // Highlight connected links
+        link.style('stroke', l => {
+            const source = typeof l.source === 'object' ? l.source.id : l.source;
+            const target = typeof l.target === 'object' ? l.target.id : l.target;
+            return (source === d.id || target === d.id) ? '#666' : '#e0e0e0';
+        })
+        .style('stroke-opacity', l => {
+            const source = typeof l.source === 'object' ? l.source.id : l.source;
+            const target = typeof l.target === 'object' ? l.target.id : l.target;
+            return (source === d.id || target === d.id) ? 0.9 : 0.1;
+        })
+        .style('stroke-width', l => {
+            const source = typeof l.source === 'object' ? l.source.id : l.source;
+            const target = typeof l.target === 'object' ? l.target.id : l.target;
+            if (source === d.id || target === d.id) {
+                if (l.type === 'director' || l.type === 'actor') {
+                    return 2;
+                } else if (l.type === 'worked_with') {
+                    return 1.5;
+                } else if (l.type === 'co_actor') {
                     return 1;
                 }
-                return 0.2;
-            });
-            
-            // Highlight relevant labels
-            nodeLabels.style('opacity', n => {
-                const isConnected = links.some(l => {
-                    const source = typeof l.source === 'object' ? l.source.id : l.source;
-                    const target = typeof l.target === 'object' ? l.target.id : l.target;
-                    return (source === d.id && target === n.id) || (target === d.id && source === n.id);
-                });
-                
-                if (n.id === d.id) return 1;
-                if (isConnected) {
-                    if (n.type === 'movie') return 0.9;
-                    if (n.role === 'director') return 1;
-                    return 0.9;
-                }
-                return 0.1;
-            });
-        })
-        .on('mousemove', function(event) {
-            // Move tooltip with cursor
-            tooltip.style('left', (event.pageX + 10) + 'px')
-                   .style('top', (event.pageY - 10) + 'px');
-        })
-        .on('mouseout', function() {
-            // Hide tooltip
-            tooltip.style('visibility', 'hidden');
-            
-            // Reset all styles if no node is selected
-            if (!selectedNode) {
-                link.style('stroke', '#e0e0e0')
-                    .style('stroke-opacity', 0.5)
-                    .style('stroke-width', d => {
-                        if (d.type === 'director' || d.type === 'actor') {
-                            return 1.5;
-                        } else if (d.type === 'worked_with') {
-                            return 1;
-                        } else if (d.type === 'co_actor') {
-                            return 0.5;
-                        }
-                        return 1;
-                    });
-                
-                node.style('opacity', getNodeOpacity);
-                
-                nodeLabels.style('opacity', d => {
-                    if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                    if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-                    if (d.role === 'director') return 0.9;
-                    return 0.7;
-                });
+                return 1.5;
             }
+            return 0.5;
         });
         
-        // Add click behavior for persisting selection
-        node.on('click', function(event, d) {
-            event.stopPropagation();
+        // Highlight connected nodes
+        node.style('opacity', n => {
+            const isConnected = links.some(l => {
+                const source = typeof l.source === 'object' ? l.source.id : l.source;
+                const target = typeof l.target === 'object' ? l.target.id : l.target;
+                return (source === d.id && target === n.id) || (target === d.id && source === n.id);
+            });
             
-            // Toggle selection
-            if (selectedNode === d) {
-                // Deselect if already selected
-                selectedNode = null;
-                
-                // Reset styles
-                link.style('stroke', '#e0e0e0')
-                    .style('stroke-opacity', 0.5)
-                    .style('stroke-width', d => {
-                        if (d.type === 'director' || d.type === 'actor') {
-                            return 1.5;
-                        } else if (d.type === 'worked_with') {
-                            return 1;
-                        } else if (d.type === 'co_actor') {
-                            return 0.5;
-                        }
-                        return 1;
-                    });
-                
-                node.style('opacity', getNodeOpacity)
-                    .style('stroke', '#fff')
-                    .style('stroke-width', 1);
-                
-                nodeLabels.style('opacity', d => {
-                    if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                    if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-                    if (d.role === 'director') return 0.9;
-                    return 0.7;
-                });
-            } else {
-                // Select this node
-                selectedNode = d;
-                
-                // Highlight connected links
-                link.style('stroke', l => {
-                    const source = typeof l.source === 'object' ? l.source.id : l.source;
-                    const target = typeof l.target === 'object' ? l.target.id : l.target;
-                    return (source === d.id || target === d.id) ? '#666' : '#e0e0e0';
-                })
-                .style('stroke-opacity', l => {
-                    const source = typeof l.source === 'object' ? l.source.id : l.source;
-                    const target = typeof l.target === 'object' ? l.target.id : l.target;
-                    return (source === d.id || target === d.id) ? 0.9 : 0.1;
-                })
-                .style('stroke-width', l => {
-                    const source = typeof l.source === 'object' ? l.source.id : l.source;
-                    const target = typeof l.target === 'object' ? l.target.id : l.target;
-                    if (source === d.id || target === d.id) {
-                        if (l.type === 'director' || l.type === 'actor') {
-                            return 2;
-                        } else if (l.type === 'worked_with') {
-                            return 1.5;
-                        } else if (l.type === 'co_actor') {
-                            return 1;
-                        }
-                        return 1.5;
-                    }
-                    return 0.5;
-                });
-                
-                // Highlight connected nodes
-                node.style('opacity', n => {
-                    const isConnected = links.some(l => {
-                        const source = typeof l.source === 'object' ? l.source.id : l.source;
-                        const target = typeof l.target === 'object' ? l.target.id : l.target;
-                        return (source === d.id && target === n.id) || (target === d.id && source === n.id);
-                    });
-                    
-                    // Highlight node outline if selected
-                    if (n.id === d.id) {
-                        d3.select(this).style('stroke', '#000').style('stroke-width', 2);
-                    }
-                    
-                    if (n.id === d.id) return 1;
-                    if (isConnected) {
-                        if (n.type === 'movie' && n.shelf === 'progress') return 0.7;
-                        return 1;
-                    }
-                    return 0.2;
-                });
-                
-                // Highlight relevant labels
-                nodeLabels.style('opacity', n => {
-                    const isConnected = links.some(l => {
-                        const source = typeof l.source === 'object' ? l.source.id : l.source;
-                        const target = typeof l.target === 'object' ? l.target.id : l.target;
-                        return (source === d.id && target === n.id) || (target === d.id && source === n.id);
-                    });
-                    
-                    if (n.id === d.id) return 1;
-                    if (isConnected) {
-                        if (n.type === 'movie') return 0.9;
-                        if (n.role === 'director') return 1;
-                        return 0.9;
-                    }
-                    return 0.1;
-                });
+            if (isClick && n.id === d.id) {
+                d3.select(this).style('stroke', '#000').style('stroke-width', 2);
             }
+            
+            if (n.id === d.id) return 1;
+            if (isConnected) {
+                if (n.type === 'movie' && n.shelf === 'progress') return 0.7;
+                return 1;
+            }
+            return 0.2;
         });
         
-        // Clear selection when clicking on background
-        svg.on('click', function(event) {
-            if (event.target === this && selectedNode) {
-                selectedNode = null;
-                
-                // Reset styles
-                link.style('stroke', '#e0e0e0')
-                    .style('stroke-opacity', 0.5)
-                    .style('stroke-width', d => {
-                        if (d.type === 'director' || d.type === 'actor') {
-                            return 1.5;
-                        } else if (d.type === 'worked_with') {
-                            return 1;
-                        } else if (d.type === 'co_actor') {
-                            return 0.5;
-                        }
-                        return 1;
-                    });
-                
-                node.style('opacity', getNodeOpacity)
-                    .style('stroke', '#fff')
-                    .style('stroke-width', 1);
-                
-                nodeLabels.style('opacity', d => {
-                    if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                    if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-                    if (d.role === 'director') return 0.9;
-                    return 0.7;
-                });
-            }
-        });
-        
-        // Drag behavior functions
-        function dragstarted(event, d) {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x;
-            d.fy = d.y;
-        }
-
-        function dragged(event, d) {
-            d.fx = event.x;
-            d.fy = event.y;
-        }
-
-        function dragended(event, d) {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
-        }
-
-        // Zoom control functions
-        function zoomIn() {
-            svg.transition()
-                .duration(750)
-                .call(zoom.scaleBy, 1.3);
-        }
-
-        function zoomOut() {
-            svg.transition()
-                .duration(750)
-                .call(zoom.scaleBy, 0.7);
-        }
-
-        function resetView() {
-            svg.transition()
-                .duration(750)
-                .call(zoom.transform, d3.zoomIdentity);
-        }
-
-        // Filter nodes by category
-        function filterByCategory(category) {
-            // Update node visibility
-            node.style('opacity', d => {
-                if (category === 'all') return getNodeOpacity(d);
-                if (d.type === 'movie') {
-                    return d.shelf === category ? getNodeOpacity(d) : 0.1;
-                }
-                return getNodeOpacity(d);
+        // Highlight relevant labels
+        nodeLabels.style('opacity', n => {
+            const isConnected = links.some(l => {
+                const source = typeof l.source === 'object' ? l.source.id : l.source;
+                const target = typeof l.target === 'object' ? l.target.id : l.target;
+                return (source === d.id && target === n.id) || (target === d.id && source === n.id);
             });
-
-            // Update label visibility
-            nodeLabels.style('opacity', d => {
-                if (category === 'all') {
-                    if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                    if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-                    if (d.role === 'director') return 0.9;
-                    return 0.7;
-                }
-                if (d.type === 'movie') {
-                    return d.shelf === category ? 0.9 : 0.1;
-                }
-                return 0.7;
-            });
-
-            // Update link visibility
-            link.style('opacity', l => {
-                if (category === 'all') return 0.5;
-                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
-                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
-                
-                if (source.type === 'movie' && source.shelf === category) return 0.5;
-                if (target.type === 'movie' && target.shelf === category) return 0.5;
-                return 0.1;
-            });
-        }
-
-        // Toggle visibility of node types
-        function toggleNodeType(type) {
-            const isVisible = node.style('opacity') === '1';
             
-            // Update node visibility
-            node.style('opacity', d => {
-                if (d.type === type) return isVisible ? 0.1 : getNodeOpacity(d);
-                return getNodeOpacity(d);
-            });
-
-            // Update label visibility
-            nodeLabels.style('opacity', d => {
-                if (d.type === type) return isVisible ? 0.1 : 0.7;
-                if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
-                if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
-                if (d.role === 'director') return 0.9;
-                return 0.7;
-            });
-
-            // Update link visibility
-            link.style('opacity', l => {
-                const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
-                const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
-                
-                if (source.type === type || target.type === type) return isVisible ? 0.1 : 0.5;
-                return 0.5;
-            });
-        }
-
-        // Handle window resizing
-        function resize() {
-            if (!svg || !g) return;
-
-            // Get new dimensions
-            const container = document.getElementById('graph-container');
-            width = container.clientWidth;
-            height = container.clientHeight;
-
-            // Update SVG dimensions
-            svg.attr('viewBox', [-width/2, -height/2, width, height]);
-
-            // Update simulation
-            if (simulation) {
-                simulation
-                    .force('x', d3.forceX().strength(0.01))
-                    .force('y', d3.forceY().strength(0.01))
-                    .restart();
+            if (n.id === d.id) return 1;
+            if (isConnected) {
+                if (n.type === 'movie') return 0.9;
+                if (n.role === 'director') return 1;
+                return 0.9;
             }
-        }
-
-        // Return the public API
-        return {
-            init,
-            zoomIn,
-            zoomOut,
-            resetView,
-            filterByCategory,
-            toggleNodeType,
-            resize
-        };
+            return 0.1;
+        });
     }
+
+    // Reset highlighting
+    function resetHighlighting() {
+        link.style('stroke', '#e0e0e0')
+            .style('stroke-opacity', 0.5)
+            .style('stroke-width', d => {
+                if (d.type === 'director' || d.type === 'actor') {
+                    return 1.5;
+                } else if (d.type === 'worked_with') {
+                    return 1;
+                } else if (d.type === 'co_actor') {
+                    return 0.5;
+                }
+                return 1;
+            });
+        
+        node.style('opacity', getNodeOpacity)
+            .style('stroke', '#fff')
+            .style('stroke-width', 1);
+        
+        nodeLabels.style('opacity', d => {
+            if (d.type === 'movie' && d.shelf === 'wishlist') return 0.6;
+            if (d.type === 'movie' && d.shelf === 'dropped') return 0.6;
+            if (d.role === 'director') return 0.9;
+            return 0.7;
+        });
+    }
+
+    // Return the public API
+    return {
+        init,
+        zoomIn,
+        zoomOut,
+        resetView,
+        filterByCategory,
+        toggleNodeType,
+        resize
+    };
 })();
 
 // Make graphVisualization available globally
