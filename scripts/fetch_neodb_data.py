@@ -196,8 +196,9 @@ def process_movie_creators(movie_data, movie_id, creator_nodes, all_data):
             'type': 'wrote'
         })
     
-    # Process actors (all of them, not just top 5)
-    for actor_name in movie_data.get('actor', []):
+    # Process actors (limit to top 5)
+    actors = movie_data.get('actor', [])[:5]  # Limit to top 5 actors
+    for actor_name in actors:
         creator_id = f"actor_{hash(actor_name)}"
         if creator_id not in creator_nodes:
             creator_nodes[creator_id] = {
@@ -276,22 +277,11 @@ def fetch_neodb_data():
     for shelf_type in shelf_types:
         try:
             print(f"\n2. Fetching movies from '{shelf_type}' shelf")
-            endpoint = f"{BASE_URL}/api/me/shelf/{shelf_type}"
+            endpoint = f"{BASE_URL}/api/me/shelf/movie"  # Changed to explicitly use movie endpoint
             
-            # Try first with type=movie
-            params = {'type': 'movie'}
+            # Use shelf parameter
+            params = {'shelf': shelf_type}
             items = fetch_paginated_data(endpoint, headers, params)
-            
-            if not items:
-                # If no items found, try with category=movie
-                print("Retrying with category=movie parameter...")
-                params = {'category': 'movie'}
-                items = fetch_paginated_data(endpoint, headers, params)
-            
-            if not items:
-                # If still no items, try without filter and let the code filter movies
-                print("Retrying without category filter...")
-                items = fetch_paginated_data(endpoint, headers)
             
             print(f"Found {len(items)} movies on {shelf_type} shelf")
             
@@ -354,7 +344,8 @@ def fetch_neodb_data():
                 time.sleep(0.2)
         
         except Exception as e:
-            print(f"Error processing {shelf_type} shelf: {e}")
+            print(f"Error processing {shelf_type} shelf: {str(e)}")
+            print(f"Full error: {e}")
     
     # Add all nodes to the graph
     # First add shelf nodes
