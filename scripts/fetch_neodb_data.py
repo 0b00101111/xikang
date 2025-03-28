@@ -92,7 +92,6 @@ def fetch_paginated_data(api_url, headers, params=None):
             **params,
             'page': page,
             'limit': page_size,  # NeoDB uses 'limit' instead of 'page_size'
-            'type': 'movie'  # Explicitly specify we want movies
         }
         
         print(f"Fetching {api_url} with params: {current_params}")
@@ -155,9 +154,9 @@ def _is_movie_item(item):
     
     return False
 
-def fetch_movie_details(movie_uuid, base_url, headers):
+def fetch_movie_details(movie_id, base_url, headers):
     """Fetch detailed movie information including creators"""
-    endpoint = f"{base_url}/api/movie/{movie_uuid}"
+    endpoint = f"{base_url}/movie/{movie_id}"  # Updated endpoint
     print(f"Fetching movie details: {endpoint}")
     
     try:
@@ -285,12 +284,11 @@ def fetch_neodb_data():
     for shelf_type in shelf_types:
         try:
             print(f"\n2. Fetching movies from '{shelf_type}' shelf")
-            endpoint = f"{BASE_URL}/me/shelf"  # Updated endpoint
+            endpoint = f"{BASE_URL}/me/items/movie"  # Updated endpoint for movie items
             
             # Updated parameters based on NeoDB API requirements
             params = {
-                'status': shelf_type,
-                'type': 'movie'
+                'status': shelf_type
             }
             
             items = fetch_paginated_data(endpoint, headers, params)
