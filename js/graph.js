@@ -873,6 +873,27 @@ const graphVisualization = (function() {
             .scale(scale));
     }
 
+    // Basic zoom operations
+    function zoomIn() {
+        if (!canvas) return;
+        const currentTransform = d3.zoomTransform(canvas.node());
+        const newScale = currentTransform.k * 1.3;
+        canvas.call(d3.zoom().transform, currentTransform.scale(newScale / currentTransform.k));
+    }
+
+    function zoomOut() {
+        if (!canvas) return;
+        const currentTransform = d3.zoomTransform(canvas.node());
+        const newScale = currentTransform.k / 1.3;
+        canvas.call(d3.zoom().transform, currentTransform.scale(newScale / currentTransform.k));
+    }
+
+    function resetView() {
+        if (!canvas) return;
+        canvas.call(d3.zoom().transform, d3.zoomIdentity);
+        setTimeout(zoomToFit, 100);
+    }
+
     // Filter to specific shelf
     function filterByShelf(shelf) {
         nodeFilters.shelf = shelf;
@@ -918,7 +939,10 @@ const graphVisualization = (function() {
         resize,
         zoomToFit,
         filterByShelf,
-        filterByType
+        filterByType,
+        zoomIn,
+        zoomOut,
+        resetView
     };
 })();
 
