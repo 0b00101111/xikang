@@ -18,12 +18,12 @@ const graphVisualization = (function() {
 
     // Settings for layout and interactivity
     const FORCE_SETTINGS = {
-        linkDistance: 30,        // Base distance between nodes (reduced from 50)
-        linkStrength: 0.2,       // How rigid the links are (increased from 0.1)
-        charge: -50,             // Repulsive force between nodes (reduced strength from -100)
-        gravity: 0.15,           // Force pulling nodes to center (increased from 0.05)
-        friction: 0.7,           // Velocity decay (reduced from 0.9 for more movement)
-        collisionRadius: 10      // Space around nodes to prevent overlap (reduced from 15)
+        linkDistance: 30,        // Base distance between nodes
+        linkStrength: 0.3,       // How rigid the links are (increased)
+        charge: -40,             // Reduced repulsive force
+        gravity: 0.25,           // Much stronger gravity
+        friction: 0.6,           // Higher friction to slow movement
+        collisionRadius: 8       // Smaller collision radius
     };
 
     // Get node color based on type and shelf status
@@ -459,19 +459,31 @@ const graphVisualization = (function() {
                     if (d.type === 'creator' && d.role === 'director') return FORCE_SETTINGS.charge;
                     return FORCE_SETTINGS.charge * 0.8;
                 })
-                .distanceMax(200))  // Reduced from 300
+                .distanceMax(150))  // Reduce max distance for charge effect
             .force('x', d3.forceX().strength(FORCE_SETTINGS.gravity))
             .force('y', d3.forceY().strength(FORCE_SETTINGS.gravity))
             .force('collision', d3.forceCollide()
                 .radius(d => getNodeSize(d) * FORCE_SETTINGS.collisionRadius * 0.8)
-                .strength(0.8))
+                .strength(0.9))  // Increased collision strength
             .velocityDecay(FORCE_SETTINGS.friction)
-            .alphaDecay(0.008)  // Slightly faster cooling
-            .alpha(0.5)  // Higher starting energy
+            .alphaDecay(0.02)    // Much faster cooling
+            .alpha(0.8)          // Higher starting energy to get to stable state faster
             .on('tick', render);
             
-        // Keep simulation running at low alpha for responsiveness
-        simulation.alphaMin(0.001);
+        // Keep simulation running at low alpha for responsiveness but with a higher min
+        simulation.alphaMin(0.005);
+        
+        // Force stabilization after a set time
+        setTimeout(() => {
+            // Reduce simulation to minimum activity
+            simulation.alpha(0.01);
+            
+            // After another delay, stop simulation completely
+            setTimeout(() => {
+                simulation.stop();
+                console.log("Simulation stabilized and stopped");
+            }, 3000);
+        }, 5000);
         
         // Set initial node positions
         nodes.forEach(node => {
