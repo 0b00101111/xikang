@@ -87,6 +87,8 @@ function blendColors(colors) {
 
 // Get or assign color for a creator
 function getCreatorColor(creatorId, hasCompletedMovie) {
+    // Handle missing data gracefully
+    if (!creatorId) return PALETTE.sumiInk3;
     if (!hasCompletedMovie) return PALETTE.sumiInk3;
     
     if (!creatorColorMap.has(creatorId)) {
@@ -100,24 +102,41 @@ function getCreatorColor(creatorId, hasCompletedMovie) {
 
 // Calculate movie color based on its creators
 function calculateMovieColor(movieNode, nodes, links) {
+    // Handle missing data gracefully
+    if (!movieNode || !nodes || !links) return PALETTE.sumiInk3;
     if (movieNode.shelf !== 'complete') return PALETTE.sumiInk3;
     
-    // Find all creators connected to this movie
-    const creatorColors = links
-        .filter(link => 
-            (link.source === movieNode.id || link.target === movieNode.id) &&
-            (typeof link.source === 'string' ? link.source : link.source.id) !== movieNode.id
-        )
-        .map(link => {
-            const creatorId = typeof link.source === 'string' 
-                ? (link.source === movieNode.id ? link.target : link.source)
-                : (link.source.id === movieNode.id ? link.target.id : link.source.id);
-            const creator = nodes.find(n => n.id === creatorId);
-            return creator ? getCreatorColor(creator.id, true) : null;
-        })
-        .filter(color => color && color !== PALETTE.sumiInk3);
-    
-    return blendColors(creatorColors);
+    try {
+        // Find all creators connected to this movie
+        const creatorColors = links
+            .filter(link => {
+                // Handle potential issues with link structure
+                if (!link || typeof link.source === 'undefined' || typeof link.target === 'undefined') {
+                    return false;
+                }
+                
+                const sourceId = typeof link.source === 'object' ? link.source?.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target?.id : link.target;
+                
+                if (!sourceId || !targetId) return false;
+                
+                return (sourceId === movieNode.id || targetId === movieNode.id);
+            })
+            .map(link => {
+                const sourceId = typeof link.source === 'object' ? link.source?.id : link.source;
+                const targetId = typeof link.target === 'object' ? link.target?.id : link.target;
+                
+                const creatorId = sourceId === movieNode.id ? targetId : sourceId;
+                const creator = nodes.find(n => n.id === creatorId);
+                return creator ? getCreatorColor(creator.id, true) : null;
+            })
+            .filter(color => color && color !== PALETTE.sumiInk3);
+        
+        return blendColors(creatorColors);
+    } catch (error) {
+        console.error("Error calculating movie color:", error);
+        return PALETTE.sumiInk3;
+    }
 }
 
 // Export the color utilities
