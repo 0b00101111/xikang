@@ -4,11 +4,14 @@ const graphVisualization = (function() {
     let canvas, context, simulation;
     let width, height, data;
     let nodes = [], links = [];
+    let visibleNodes = [], visibleLinks = [];
     let selectedNode = null;
     let transform = d3.zoomIdentity;
     let isDragging = false;
     let draggedNode = null;
     let animationFrameId = null;
+    let nodeFilters = { type: null, shelf: null };
+    let isStabilized = false;
 
     // Color scheme
     const movieColor = '#E07A5F';
@@ -25,6 +28,10 @@ const graphVisualization = (function() {
         friction: 0.6,           // Higher friction to slow movement
         collisionRadius: 8       // Smaller collision radius
     };
+
+    // Maximum number of visible nodes to prevent overload
+    const MAX_VISIBLE_NODES = 150;
+    const MAX_VISIBLE_LINKS = 300;
 
     // Get node color based on type and shelf status
     function getNodeColor(d) {
@@ -66,7 +73,7 @@ const graphVisualization = (function() {
         let closestDistance = Infinity;
         
         // Find the closest node within threshold
-        simulation.nodes().forEach(node => {
+        visibleNodes.forEach(node => {
             const dx = node.x - pos[0];
             const dy = node.y - pos[1];
             const distance = dx * dx + dy * dy;
@@ -83,6 +90,10 @@ const graphVisualization = (function() {
     // Handle zoom events
     function handleZoom(event) {
         transform = event.transform;
+        
+        // Recalculate visible nodes based on zoom level
+        updateVisibleElements();
+        
         render();
     }
 
@@ -124,6 +135,10 @@ const graphVisualization = (function() {
             event.stopPropagation();
             
             // Restart simulation with higher energy
+            if (isStabilized) {
+                simulation.restart();
+                isStabilized = false;
+            }
             simulation.alpha(0.3).restart();
         }
     }
@@ -155,7 +170,12 @@ const graphVisualization = (function() {
             } else {
                 // Select and highlight connections
                 selectedNode = node;
+                expandNodeNeighborhood(node);
                 highlightConnections(node);
+                if (isStabilized) {
+                    simulation.restart();
+                    isStabilized = false;
+                }
                 simulation.alpha(0.1).restart(); // Gentle nudge
             }
             render();
@@ -163,14 +183,43 @@ const graphVisualization = (function() {
             // Click on background clears selection
             selectedNode = null;
             resetHighlighting();
+            updateVisibleElements(); // Revert to default visible set
             render();
         }
+    }
+
+    // Expand to show a node's neighborhood
+    function expandNodeNeighborhood(node) {
+        // Get all directly connected nodes
+        const connectedNodes = new Set();
+        connectedNodes.add(node);
+        
+        links.forEach(link => {
+            if (link.source.id === node.id) {
+                connectedNodes.add(link.target);
+            } else if (link.target.id === node.id) {
+                connectedNodes.add(link.source);
+            }
+        });
+        
+        // Get links between these nodes
+        const neighborhoodLinks = links.filter(link => 
+            connectedNodes.has(link.source) && connectedNodes.has(link.target)
+        );
+        
+        // Update visible elements to include this neighborhood
+        visibleNodes = Array.from(connectedNodes);
+        visibleLinks = neighborhoodLinks;
+        
+        // Ensure the simulation uses these nodes
+        simulation.nodes(visibleNodes);
+        simulation.force('link').links(visibleLinks);
     }
 
     // Highlighting and selection functions
     function highlightConnections(node) {
         // Find connected nodes and links
-        links.forEach(link => {
+        visibleLinks.forEach(link => {
             link.highlighted = false;
             link.visible = false;
             
@@ -188,7 +237,7 @@ const graphVisualization = (function() {
         });
         
         // Mark the selected node
-        nodes.forEach(n => {
+        visibleNodes.forEach(n => {
             n.highlighted = n === node || n.highlighted;
             // Dim non-highlighted nodes
             n.dimmed = !n.highlighted;
@@ -203,6 +252,17 @@ const graphVisualization = (function() {
         });
         
         links.forEach(link => {
+            link.highlighted = false;
+            link.visible = true;
+        });
+        
+        // Reflect this in visible elements too
+        visibleNodes.forEach(node => {
+            node.highlighted = false;
+            node.dimmed = false;
+        });
+        
+        visibleLinks.forEach(link => {
             link.highlighted = false;
             link.visible = true;
         });
@@ -257,6 +317,66 @@ const graphVisualization = (function() {
         d3.select('.node-tooltip').style('visibility', 'hidden');
     }
 
+    // Select most important nodes based on connectivity
+    function getImportantNodes() {
+        // Calculate connection count for each node
+        const nodeDegrees = new Map();
+        
+        nodes.forEach(node => {
+            let connectionCount = 0;
+            links.forEach(link => {
+                if (link.source.id === node.id || link.target.id === node.id) {
+                    connectionCount++;
+                }
+            });
+            nodeDegrees.set(node.id, connectionCount);
+        });
+        
+        // Apply any current filters
+        let filteredNodes = nodes;
+        if (nodeFilters.type) {
+            filteredNodes = filteredNodes.filter(n => n.type === nodeFilters.type);
+        }
+        if (nodeFilters.shelf) {
+            filteredNodes = filteredNodes.filter(n => n.shelf === nodeFilters.shelf);
+        }
+        
+        // Sort by degree centrality (highest connection count first)
+        return filteredNodes
+            .sort((a, b) => {
+                const degreeA = nodeDegrees.get(a.id) || 0;
+                const degreeB = nodeDegrees.get(b.id) || 0;
+                return degreeB - degreeA;
+            })
+            .slice(0, MAX_VISIBLE_NODES);
+    }
+
+    // Update which nodes and links are visible
+    function updateVisibleElements() {
+        if (selectedNode) {
+            // If a node is selected, we already set visible elements
+            return;
+        }
+        
+        // Get the most important nodes
+        visibleNodes = getImportantNodes();
+        
+        // Create a set of visible node IDs for quick lookup
+        const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+        
+        // Only include links between visible nodes
+        visibleLinks = links.filter(link => 
+            visibleNodeIds.has(link.source.id) && visibleNodeIds.has(link.target.id)
+        ).slice(0, MAX_VISIBLE_LINKS);
+        
+        // Update simulation to use only visible elements
+        simulation.nodes(visibleNodes);
+        simulation.force('link').links(visibleLinks);
+        
+        // Log visible nodes count for debugging
+        console.log(`Showing ${visibleNodes.length} nodes and ${visibleLinks.length} links`);
+    }
+
     // Main render function with culling
     function render() {
         // Clear canvas
@@ -278,7 +398,7 @@ const graphVisualization = (function() {
         context.lineWidth = 0.5 / transform.k;
         
         // Draw regular links first (dimmed if not highlighted)
-        links.forEach(link => {
+        visibleLinks.forEach(link => {
             // Skip if not visible or not in viewport
             if (!isLinkVisible(link, visible)) return;
             
@@ -297,7 +417,7 @@ const graphVisualization = (function() {
         });
         
         // Draw highlighted links on top with stronger appearance
-        links.forEach(link => {
+        visibleLinks.forEach(link => {
             if (!isLinkVisible(link, visible) || !link.highlighted) return;
             
             context.beginPath();
@@ -309,7 +429,7 @@ const graphVisualization = (function() {
         });
 
         // Draw nodes
-        nodes.forEach(node => {
+        visibleNodes.forEach(node => {
             // Skip if node is outside viewport
             if (!isNodeVisible(node, visible)) return;
             
@@ -346,12 +466,32 @@ const graphVisualization = (function() {
                 context.stroke();
             }
 
-            // Draw node labels if zoomed in enough
-            if (transform.k > 0.8 || node.highlighted) {
+            // Draw node labels if zoomed in or selected
+            if (transform.k > 1.5 || node.highlighted || node === selectedNode) {
                 drawNodeLabel(node, nodeSize);
             }
         });
 
+        // Display node count and status info
+        if (transform.k < 1.0) {
+            displayStatusInfo();
+        }
+
+        context.restore();
+    }
+    
+    // Show information about filters and node counts
+    function displayStatusInfo() {
+        const padding = 10;
+        const infoText = `Showing ${visibleNodes.length} of ${nodes.length} nodes`;
+        
+        context.save();
+        context.resetTransform();
+        context.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        context.fillRect(padding, padding, 250, 30);
+        context.fillStyle = '#000';
+        context.font = '14px Arial';
+        context.fillText(infoText, padding + 10, padding + 20);
         context.restore();
     }
     
@@ -361,15 +501,26 @@ const graphVisualization = (function() {
         context.font = `${node.highlighted ? 12 : 10}px / ${transform.k}px Arial`;
         context.textAlign = 'center';
         
-        // Improved label placement
-        let labelY = node.y + nodeSize * 1.5;
-        
-        // Truncate long names
+        // Background for label to improve readability
         let displayName = node.name;
         if (displayName.length > 15 && !node.highlighted) {
             displayName = displayName.substring(0, 12) + '...';
         }
         
+        const textWidth = context.measureText(displayName).width;
+        const labelY = node.y + nodeSize * 1.5;
+        
+        // Draw text background 
+        context.fillStyle = 'rgba(255,255,255,0.7)';
+        context.fillRect(
+            node.x - textWidth/2 - 2, 
+            labelY - 10, 
+            textWidth + 4, 
+            14
+        );
+        
+        // Draw text
+        context.fillStyle = node.dimmed ? 'rgba(0,0,0,0.3)' : '#000';
         context.fillText(displayName, node.x, labelY);
     }
     
@@ -443,9 +594,12 @@ const graphVisualization = (function() {
             .on('mouseup', handleMouseUp)
             .on('click', handleClick);
         
+        // Select and limit visible nodes to avoid overloading
+        updateVisibleElements();
+        
         // Optimized force simulation with Anytype-like settings
-        simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(links)
+        simulation = d3.forceSimulation(visibleNodes)
+            .force('link', d3.forceLink(visibleLinks)
                 .id(d => d.id)
                 .distance(d => {
                     if (d.type === 'acted_in') return FORCE_SETTINGS.linkDistance * 0.7;
@@ -459,18 +613,18 @@ const graphVisualization = (function() {
                     if (d.type === 'creator' && d.role === 'director') return FORCE_SETTINGS.charge;
                     return FORCE_SETTINGS.charge * 0.8;
                 })
-                .distanceMax(150))  // Reduce max distance for charge effect
+                .distanceMax(150))
             .force('x', d3.forceX().strength(FORCE_SETTINGS.gravity))
             .force('y', d3.forceY().strength(FORCE_SETTINGS.gravity))
             .force('collision', d3.forceCollide()
                 .radius(d => getNodeSize(d) * FORCE_SETTINGS.collisionRadius * 0.8)
-                .strength(0.9))  // Increased collision strength
+                .strength(0.9))
             .velocityDecay(FORCE_SETTINGS.friction)
-            .alphaDecay(0.02)    // Much faster cooling
-            .alpha(0.8)          // Higher starting energy to get to stable state faster
+            .alphaDecay(0.02)
+            .alpha(0.8)
             .on('tick', render);
             
-        // Keep simulation running at low alpha for responsiveness but with a higher min
+        // Keep simulation running at low alpha for responsiveness
         simulation.alphaMin(0.005);
         
         // Force stabilization after a set time
@@ -481,12 +635,13 @@ const graphVisualization = (function() {
             // After another delay, stop simulation completely
             setTimeout(() => {
                 simulation.stop();
+                isStabilized = true;
                 console.log("Simulation stabilized and stopped");
             }, 3000);
         }, 5000);
         
         // Set initial node positions
-        nodes.forEach(node => {
+        visibleNodes.forEach(node => {
             if (node.initialX && node.initialY) {
                 node.x = node.initialX;
                 node.y = node.initialY;
@@ -501,12 +656,111 @@ const graphVisualization = (function() {
         // Setup window resize handler
         window.addEventListener('resize', resize);
         
+        // Setup filter controls if they exist
+        setupFilterControls();
+        
         // Display loading spinner until first render
         const loading = document.getElementById('loading');
         if (loading) {
             setTimeout(() => {
                 loading.style.display = 'none';
             }, 2000);
+        }
+        
+        // Add filter UI
+        addFilterUI(container);
+    }
+
+    // Add filter UI elements
+    function addFilterUI(container) {
+        // Create filter controls container
+        const filterContainer = document.createElement('div');
+        filterContainer.className = 'graph-filters';
+        filterContainer.style.cssText = 'position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 100;';
+        
+        // Add title
+        const title = document.createElement('div');
+        title.innerText = 'Filter Graph';
+        title.style.fontWeight = 'bold';
+        title.style.marginBottom = '8px';
+        filterContainer.appendChild(title);
+        
+        // Create shelf filter
+        const shelfSelect = document.createElement('select');
+        shelfSelect.innerHTML = `
+            <option value="">All Shelves</option>
+            <option value="wishlist">Wishlist</option>
+            <option value="progress">In Progress</option>
+            <option value="complete">Completed</option>
+            <option value="dropped">Dropped</option>
+        `;
+        shelfSelect.style.marginBottom = '5px';
+        shelfSelect.style.width = '100%';
+        filterContainer.appendChild(shelfSelect);
+        
+        // Create type filter
+        const typeSelect = document.createElement('select');
+        typeSelect.innerHTML = `
+            <option value="">All Types</option>
+            <option value="movie">Movies Only</option>
+            <option value="creator">Creators Only</option>
+        `;
+        typeSelect.style.marginBottom = '5px';
+        typeSelect.style.width = '100%';
+        filterContainer.appendChild(typeSelect);
+        
+        // Add event listeners
+        shelfSelect.addEventListener('change', () => {
+            nodeFilters.shelf = shelfSelect.value || null;
+            updateVisibleElements();
+            if (isStabilized) {
+                simulation.restart();
+                isStabilized = false;
+            }
+            simulation.alpha(0.3).restart();
+        });
+        
+        typeSelect.addEventListener('change', () => {
+            nodeFilters.type = typeSelect.value || null;
+            updateVisibleElements();
+            if (isStabilized) {
+                simulation.restart();
+                isStabilized = false;
+            }
+            simulation.alpha(0.3).restart();
+        });
+        
+        // Append to container
+        container.appendChild(filterContainer);
+    }
+
+    // Setup existing filter controls if they exist in the DOM
+    function setupFilterControls() {
+        const shelfFilter = document.getElementById('shelf-filter');
+        const typeFilter = document.getElementById('type-filter');
+        
+        if (shelfFilter) {
+            shelfFilter.addEventListener('change', () => {
+                nodeFilters.shelf = shelfFilter.value || null;
+                updateVisibleElements();
+                if (isStabilized) {
+                    simulation.restart();
+                    isStabilized = false;
+                }
+                simulation.alpha(0.3).restart();
+            });
+        }
+        
+        if (typeFilter) {
+            typeFilter.addEventListener('change', () => {
+                nodeFilters.type = typeFilter.value || null;
+                updateVisibleElements();
+                if (isStabilized) {
+                    simulation.restart();
+                    isStabilized = false;
+                }
+                simulation.alpha(0.3).restart();
+            });
         }
     }
 
@@ -589,11 +843,11 @@ const graphVisualization = (function() {
 
     // Zoom to fit all nodes
     function zoomToFit() {
-        if (!nodes.length) return;
+        if (!visibleNodes.length) return;
         
         // Calculate bounds
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        nodes.forEach(d => {
+        visibleNodes.forEach(d => {
             minX = Math.min(minX, d.x);
             minY = Math.min(minY, d.y);
             maxX = Math.max(maxX, d.x);
@@ -619,6 +873,30 @@ const graphVisualization = (function() {
             .scale(scale));
     }
 
+    // Filter to specific shelf
+    function filterByShelf(shelf) {
+        nodeFilters.shelf = shelf;
+        updateVisibleElements();
+        if (isStabilized) {
+            simulation.restart();
+            isStabilized = false;
+        }
+        simulation.alpha(0.3).restart();
+        setTimeout(zoomToFit, 100);
+    }
+
+    // Filter to specific type
+    function filterByType(type) {
+        nodeFilters.type = type;
+        updateVisibleElements();
+        if (isStabilized) {
+            simulation.restart();
+            isStabilized = false;
+        }
+        simulation.alpha(0.3).restart();
+        setTimeout(zoomToFit, 100);
+    }
+
     // Handle window resizing
     function resize() {
         const container = document.getElementById('graph-container');
@@ -638,7 +916,9 @@ const graphVisualization = (function() {
     return {
         init,
         resize,
-        zoomToFit
+        zoomToFit,
+        filterByShelf,
+        filterByType
     };
 })();
 
