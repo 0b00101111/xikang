@@ -18,12 +18,12 @@ const graphVisualization = (function() {
 
     // Settings for layout and interactivity
     const FORCE_SETTINGS = {
-        linkDistance: 50,        // Base distance between nodes
-        linkStrength: 0.1,       // How rigid the links are (lower = more elastic)
-        charge: -100,            // Repulsive force between nodes (negative = repel)
-        gravity: 0.05,           // Force pulling nodes to center
-        friction: 0.9,           // Velocity decay (higher = more damping)
-        collisionRadius: 15      // Space around nodes to prevent overlap
+        linkDistance: 30,        // Base distance between nodes (reduced from 50)
+        linkStrength: 0.2,       // How rigid the links are (increased from 0.1)
+        charge: -50,             // Repulsive force between nodes (reduced strength from -100)
+        gravity: 0.15,           // Force pulling nodes to center (increased from 0.05)
+        friction: 0.7,           // Velocity decay (reduced from 0.9 for more movement)
+        collisionRadius: 10      // Space around nodes to prevent overlap (reduced from 15)
     };
 
     // Get node color based on type and shelf status
@@ -455,19 +455,19 @@ const graphVisualization = (function() {
                 .strength(FORCE_SETTINGS.linkStrength))
             .force('charge', d3.forceManyBody()
                 .strength(d => {
-                    if (d.type === 'movie') return FORCE_SETTINGS.charge * 1.5;
-                    if (d.type === 'creator' && d.role === 'director') return FORCE_SETTINGS.charge * 1.2;
-                    return FORCE_SETTINGS.charge;
+                    if (d.type === 'movie') return FORCE_SETTINGS.charge * 1.2;
+                    if (d.type === 'creator' && d.role === 'director') return FORCE_SETTINGS.charge;
+                    return FORCE_SETTINGS.charge * 0.8;
                 })
-                .distanceMax(300))
+                .distanceMax(200))  // Reduced from 300
             .force('x', d3.forceX().strength(FORCE_SETTINGS.gravity))
             .force('y', d3.forceY().strength(FORCE_SETTINGS.gravity))
             .force('collision', d3.forceCollide()
-                .radius(d => getNodeSize(d) * FORCE_SETTINGS.collisionRadius)
-                .strength(0.7))
+                .radius(d => getNodeSize(d) * FORCE_SETTINGS.collisionRadius * 0.8)
+                .strength(0.8))
             .velocityDecay(FORCE_SETTINGS.friction)
-            .alphaDecay(0.01) // Slower decay for more gradual stabilization
-            .alpha(0.3)
+            .alphaDecay(0.008)  // Slightly faster cooling
+            .alpha(0.5)  // Higher starting energy
             .on('tick', render);
             
         // Keep simulation running at low alpha for responsiveness
